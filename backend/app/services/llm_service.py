@@ -1,423 +1,207 @@
 # app/services/llm_service.py
 import os
-from typing import Optional, List, Dict, Any
+from typing import List, Dict
+from groq import AsyncGroq
 
-_CLIENT_LIB = None
-_genai_module = None
+# Global async client
+_client = None
 
-# Try import google.genai first, then genai
-try:
-    # google-genai package exposes module google.genai
-    from google import genai as _genai_module  # type: ignore
-    _CLIENT_LIB = "google.genai"
-except Exception:
-    try:
-        import genai as _genai_module  # type: ignore
-        _CLIENT_LIB = "genai"
-    except Exception:
-        _genai_module = None
-        _CLIENT_LIB = None
-
-
-def get_client():
-    """
-    Khởi tạo và trả về client GenAI. Nếu package hoặc API key thiếu, ném lỗi rõ ràng.
-    Caller nên gọi get_client() khi cần (lazy init).
-    """
-    if _genai_module is None:
-        raise ImportError(
-            "Không tìm thấy thư viện GenAI. Cài bằng một trong các lệnh:\n"
-            "  pip install google-genai\n"
-            "hoặc\n"
-            "  pip install genai\n"
-            "Kiểm tra bằng: pip show google-genai ; pip show genai"
-        )
-
-    api_key = os.getenv("GEMINI_API_KEY")
+async def init_client():
+    """Initialize Groq async client"""
+    global _client
+    
+    api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        raise ValueError("GEMINI_API_KEY không được đặt trong environment. Thêm vào .env hoặc export trước khi chạy.")
+        raise RuntimeError("GROQ_API_KEY not found in environment variables")
+    
+    _client = AsyncGroq(api_key=api_key)
+    print("✅ Groq AsyncClient initialized")
 
-    # Các package có thể có interface khác nhau; handle common constructors
-    try:
-        ClientCls = getattr(_genai_module, "Client", None)
-        if ClientCls is None:
-            ClientCls = getattr(_genai_module, "GenAIClient", None) or getattr(_genai_module, "GenAI", None)
-        if ClientCls is None:
-            raise RuntimeError("Không tìm thấy lớp Client trong package GenAI import được.")
-        # instantiate (try keyword first)
-        try:
-            client = ClientCls(api_key=api_key)
-        except TypeError:
-            try:
-                client = ClientCls({"api_key": api_key})
-            except Exception:
-                client = ClientCls()
-        return client
-    except Exception as e:
-        raise RuntimeError(f"Lỗi khi khởi tạo GenAI client ({_CLIENT_LIB}): {e}") from e
+async def close_client():
+    """Close Groq client (if needed)"""
+    global _client
+    _client = None
+    print("✅ Groq client closed")
 
-
-# Lazy-init global client variable (initialized on module import)
-try:
-    client = get_client()
-    print(f"✅ GenAI client initialized using {_CLIENT_LIB}")
-except Exception as e:
-    # Không raise trực tiếp ở import time để còn có thể unit-test module khác; nhưng ghi log rõ ràng
-    client = None
-    print(f"⚠️  GenAI client not initialized: {e}")
-
-
-def _extract_text_from_response(resp: Any) -> str:
+async def chat_with_messages_async(
+    messages: List[Dict[str, str]], 
+    model: str = None,
+    temperature: float = 0.7,
+    max_tokens: int = 1024
+) -> str:
     """
-    Trích text từ nhiều dạng response khác nhau.
+    Send messages to Groq LLM and get response
+    
+    Args:
+        messages: List of message dicts with 'role' and 'content'
+        model: Model name (defaults to GROQ_MODEL env var)
+        temperature: Sampling temperature
+        max_tokens: Maximum tokens in response
+    
+    Returns:
+        Assistant's response text
     """
+    global _client
+    
+    if _client is None:
+        raise RuntimeError("Groq client not initialized. Call init_client() first.")
+    
+    # Get model from env if not specified
+    if model is None:
+        model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    
     try:
-        if hasattr(resp, "text") and resp.text:
-            return resp.text
-        if hasattr(resp, "output_text") and resp.output_text:
-            return resp.output_text
-    except Exception:
-        pass
-
-    if isinstance(resp, dict):
-        try:
-            ch0 = resp.get("results", {}).get("channels", [])[0]
-            alt0 = ch0.get("alternatives", [])[0]
-            if alt0.get("transcript"):
-                return alt0.get("transcript")
-        except Exception:
-            pass
-        if resp.get("output_text"):
-            return resp.get("output_text")
-        if resp.get("text"):
-            return resp.get("text")
-        try:
-            out = resp.get("output", [])
-            if out:
-                c0 = out[0].get("content", [])
-                if c0 and isinstance(c0[0], dict) and c0[0].get("text"):
-                    return c0[0]["text"]
-        except Exception:
-            pass
-
-    try:
-        out = getattr(resp, "output", None)
-        if out:
-            first = out[0]
-            content = getattr(first, "content", None) or (first.get("content") if isinstance(first, dict) else None)
-            if content:
-                item = content[0]
-                text = getattr(item, "text", None) or (item.get("text") if isinstance(item, dict) else None)
-                if text:
-                    return text
-    except Exception:
-        pass
-
-    try:
-        return str(resp)
-    except Exception:
-        return ""
-
-
-def _messages_to_text(messages: List[Dict[str, str]]) -> str:
-    """
-    Chuyển history messages thành 1 prompt string.
-    Format: system at top (if any), rồi luân phiên User/Assistant.
-    """
-    parts = []
-    for m in messages:
-        role = m.get("role", "user")
-        content = m.get("content", "")
-        if role == "system":
-            parts.append(f"[System] {content}")
-        elif role == "user":
-            parts.append(f"[User] {content}")
-        else:
-            parts.append(f"[Assistant] {content}")
-    return "\n".join(parts)
-
-
-def chat_with_messages(messages: List[Dict[str, str]], model: Optional[str] = None) -> str:
-    """
-    Robust chat wrapper: thử nhiều cách gọi khác nhau tùy SDK.
-    - Nếu SDK hỗ trợ messages list (models/chats), thử trực tiếp.
-    - Nếu không, chuyển messages thành 1 string và gọi bằng `input`/`prompt`/`contents`.
-    """
-    if client is None:
-        raise RuntimeError("GenAI client chưa được khởi tạo. Kiểm tra GEMINI_API_KEY và package google-genai/genai.")
-
-    model = model or os.getenv("GEMINI_MODEL") or "gemini-2.0-flash"
-    messages_text = _messages_to_text(messages)
-
-    # 1) try client.chats.create with messages (best-case)
-    try:
-        if hasattr(client, "chats") and hasattr(client.chats, "create"):
-            try:
-                resp = client.chats.create(model=model, messages=messages)
-                return _extract_text_from_response(resp)
-            except TypeError as e:
-                # maybe this chats.create expects 'input' instead of 'messages'
-                try:
-                    resp = client.chats.create(model=model, input=messages_text)
-                    return _extract_text_from_response(resp)
-                except Exception:
-                    # try 'prompt' if available
-                    try:
-                        resp = client.chats.create(model=model, prompt=messages_text)
-                        return _extract_text_from_response(resp)
-                    except Exception:
-                        print("WARN: client.chats.create variants failed:", e)
+        print(f"=== Calling Groq LLM ({model}) ===")
+        print(f"Messages: {len(messages)} messages")
+        for msg in messages:
+            print(f"  {msg['role']}: {msg['content'][:100]}...")
+        
+        # Call Groq API
+        chat_completion = await _client.chat.completions.create(
+            messages=messages,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        
+        # Extract response
+        response_text = chat_completion.choices[0].message.content
+        
+        print(f"=== LLM Response ===")
+        print(f"{response_text[:200]}...")
+        
+        return response_text
+        
     except Exception as e:
-        print("WARN: client.chats.create failed:", e)
+        print(f"❌ Groq API Error: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise
 
-    # 2) try client.chat.completions.create (older shape)
-    try:
-        if hasattr(client, "chat") and hasattr(client.chat, "completions"):
-            try:
-                resp = client.chat.completions.create(model=model, messages=messages)
-                return _extract_text_from_response(resp)
-            except TypeError:
-                # try input string fallback
-                try:
-                    resp = client.chat.completions.create(model=model, input=messages_text)
-                    return _extract_text_from_response(resp)
-                except Exception as e:
-                    print("WARN: client.chat.completions.create fallback failed:", e)
-    except Exception as e:
-        print("WARN: client.chat.completions.create failed:", e)
+# Optional: Quick test function
+async def quick_test():
+    """Test the Groq client"""
+    if _client is None:
+        print("❌ Client not initialized")
+        return
+    
+    test_messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Hello! How are you?"}
+    ]
+    
+    response = await chat_with_messages_async(test_messages)
+    print(f"✅ Test successful: {response}")
 
-    # 3) try client.models.generate_content (expects contents as list[str] or list of Content objects)
-    try:
-        if hasattr(client, "models") and hasattr(client.models, "generate_content"):
-            # first try passing list of simple strings
-            try:
-                resp = client.models.generate_content(model=model, contents=[messages_text])
-                return _extract_text_from_response(resp)
-            except TypeError as e:
-                # maybe expects 'input' or 'prompt'
-                try:
-                    resp = client.models.generate_content(model=model, input=messages_text)
-                    return _extract_text_from_response(resp)
-                except Exception:
-                    print("WARN: client.models.generate_content fallback failed:", e)
-    except Exception as e:
-        print("WARN: client.models.generate_content failed:", e)
 
-    # 4) try client.models.generate (some SDKs)
-    try:
-        if hasattr(client, "models") and hasattr(client.models, "generate"):
-            try:
-                # many variants: input=string or prompt=string
-                try:
-                    resp = client.models.generate(model=model, input=messages_text)
-                except TypeError:
-                    resp = client.models.generate(model=model, prompt=messages_text)
-                return _extract_text_from_response(resp)
-            except Exception as e:
-                print("WARN: client.models.generate failed:", e)
-    except Exception as e:
-        print("WARN: client.models.generate (outer) failed:", e)
-
-    # 5) last resort: try a plain text call if available (e.g., client.predict / client.complete)
-    try:
-        if hasattr(client, "predict"):
-            try:
-                resp = client.predict(model=model, input=messages_text)
-                return _extract_text_from_response(resp)
-            except Exception as e:
-                print("WARN: client.predict failed:", e)
-        if hasattr(client, "complete"):
-            try:
-                resp = client.complete(model=model, prompt=messages_text)
-                return _extract_text_from_response(resp)
-            except Exception as e:
-                print("WARN: client.complete failed:", e)
-    except Exception as e:
-        print("WARN: fallback plain text calls failed:", e)
-
-    # Nếu tất cả thất bại, raise với hướng debug
-    # Gợi ý debug: in dir(client) và signature của vài hàm để biết tên tham số
-    import inspect
-    client_attrs = [n for n in dir(client) if not n.startswith("_")]
-    raise RuntimeError(
-        "Không thể gọi Gemini/GenAI: SDK hiện tại không hỗ trợ phương thức mong đợi.\n"
-        f"Client attrs sample: {client_attrs[:80]}\n"
-        "Bạn có thể kiểm tra bằng cách in dir(client) và inspect.signature trên phương thức mà bạn muốn dùng."
-    )
-# app/services/llm_service.py
+     # app/services/llm_service.py
 # import os
-# import re
-# import time
+# import json
 # import asyncio
+# import inspect
 # from typing import Optional, List, Dict, Any
 
-# _CLIENT_LIB = None
-# _genai_module = None
-# _client = None  # cached client (lazy)
-
-# # Try import google.genai first, then genai
+# # Try to import groq SDK (may be sync or async)
+# _groq_module = None
 # try:
-#     from google import genai as _genai_module  # type: ignore
-#     _CLIENT_LIB = "google.genai"
+#     import groq as _groq_module  # type: ignore
 # except Exception:
-#     try:
-#         import genai as _genai_module  # type: ignore
-#         _CLIENT_LIB = "genai"
-#     except Exception:
-#         _genai_module = None
-#         _CLIENT_LIB = None
+#     _groq_module = None
 
+# # async http client fallback
+# try:
+#     import httpx  # pip install httpx
+# except Exception:
+#     httpx = None
 
-# def _current_api_key() -> Optional[str]:
-#     return os.getenv("GEMINI_API_KEY")
+# # Global client (could be SDK client or our HTTP wrapper)
+# _client: Optional[Any] = None
+# _client_type: Optional[str] = None  # "sdk-async", "sdk-sync", "httpx"
 
-
-# def reload_client():
-#     """Force re-initialize client (useful after changing env vars)."""
-#     global _client
-#     _client = None
-#     return _init_client()
-
-
-# def _init_client():
-#     """Lazy initialize and cache the GenAI client. Raises informative errors."""
-#     global _client
+# # -----------------------
+# # Init / shutdown
+# # -----------------------
+# async def init_client() -> None:
+#     """
+#     Async initialize the Groq client.
+#     - If `groq` SDK exists and provides an async client -> use it.
+#     - Else, use httpx.AsyncClient as REST fallback.
+#     Required env:
+#       - GROQ_API_KEY
+#       - if using REST fallback: GROQ_API_BASE (e.g., https://api.groq.ai/v1)
+#     """
+#     global _client, _client_type
 #     if _client is not None:
-#         return _client
+#         return  # already init
 
-#     if _genai_module is None:
-#         raise ImportError(
-#             "Không tìm thấy thư viện GenAI. Cài bằng một trong các lệnh:\n"
-#             "  pip install google-genai\n"
-#             "hoặc\n"
-#             "  pip install genai\n"
-#             "Kiểm tra: pip show google-genai ; pip show genai"
-#         )
-
-#     api_key = _current_api_key()
+#     api_key = os.getenv("GROQ_API_KEY")
 #     if not api_key:
-#         raise RuntimeError("GEMINI_API_KEY không được đặt trong environment. Thêm vào .env hoặc export trước khi chạy.")
+#         raise RuntimeError("GROQ_API_KEY không được đặt trong environment.")
 
-#     # Try to find a Client class
-#     ClientCls = getattr(_genai_module, "Client", None) \
-#                 or getattr(_genai_module, "GenAIClient", None) \
-#                 or getattr(_genai_module, "GenAI", None)
-
-#     if ClientCls is None:
-#         raise RuntimeError("Không tìm thấy lớp Client trong package GenAI import được.")
-
-#     # Try common constructors
-#     last_exc = None
-#     try:
-#         client = ClientCls(api_key=api_key)
-#     except TypeError as e:
-#         last_exc = e
-#         try:
-#             client = ClientCls({"api_key": api_key})
-#         except Exception:
+#     # Try SDK path
+#     if _groq_module is not None:
+#         # heuristics: see if module exposes an async client or Client class
+#         ClientCls = getattr(_groq_module, "AsyncClient", None) or getattr(_groq_module, "Client", None) or getattr(_groq_module, "GroqClient", None)
+#         if ClientCls is not None:
+#             # try instantiate and detect if async-capable
 #             try:
-#                 client = ClientCls()
-#             except Exception as e2:
-#                 raise RuntimeError(f"Lỗi tạo client GenAI: {e2}") from e2
-#     except Exception as e:
-#         raise RuntimeError(f"Lỗi khi khởi tạo GenAI client: {e}") from e
+#                 # try common constructor patterns
+#                 try:
+#                     client = ClientCls(api_key=api_key)
+#                 except TypeError:
+#                     try:
+#                         client = ClientCls({"api_key": api_key})
+#                     except Exception:
+#                         client = ClientCls()
+#                 # detect async methods
+#                 if hasattr(client, "chat") and inspect.iscoroutinefunction(getattr(client, "chat")):
+#                     _client = client
+#                     _client_type = "sdk-async"
+#                     return
+#                 # if chat is sync, still accept but mark as sync
+#                 if hasattr(client, "chat") or hasattr(client, "infer") or hasattr(client, "generate"):
+#                     _client = client
+#                     _client_type = "sdk-sync"
+#                     return
+#             except Exception:
+#                 # fall through to httpx fallback
+#                 pass
 
-#     _client = client
-#     print(f"✅ GenAI client initialized using {_CLIENT_LIB}")
-#     return _client
+#     # HTTP fallback
+#     base = os.getenv("GROQ_API_BASE")
+#     if not base:
+#         raise RuntimeError("Không tìm thấy Groq SDK và GROQ_API_BASE chưa đặt. Set GROQ_API_BASE nếu muốn dùng REST fallback.")
+#     if httpx is None:
+#         raise RuntimeError("httpx chưa được cài. Cài bằng `pip install httpx` để dùng REST fallback.")
+
+#     async_client = httpx.AsyncClient(
+#         base_url=base.rstrip("/"),
+#         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+#         timeout=30.0,
+#     )
+#     _client = async_client
+#     _client_type = "httpx"
 
 
-# def _maybe_run_coroutine(val):
-#     """If val is a coroutine, run it synchronously (blocks current thread)."""
-#     if asyncio.iscoroutine(val):
-#         try:
-#             return asyncio.run(val)
-#         except RuntimeError:
-#             # If already in event loop (unlikely for FastAPI sync thread), fallback to loop run
-#             loop = asyncio.new_event_loop()
-#             try:
-#                 return loop.run_until_complete(val)
-#             finally:
-#                 loop.close()
-#     return val
-
-
-# def list_models() -> List[str]:
-#     """Return list of model names known to the client (best-effort)."""
-#     client = _init_client()
-#     names = []
+# async def close_client() -> None:
+#     """
+#     Close resources (httpx client) if needed.
+#     """
+#     global _client, _client_type
+#     if _client is None:
+#         return
 #     try:
-#         # prefer client.models.list()
-#         if hasattr(client.models, "list"):
-#             resp = _maybe_run_coroutine(client.models.list())
-#         elif hasattr(client.models, "list_models"):
-#             resp = _maybe_run_coroutine(client.models.list_models())
-#         else:
-#             # fallback: attempt to access attr directly
-#             resp = None
-
-#         # Try to extract model names from common shapes
-#         models = getattr(resp, "models", None) or getattr(resp, "results", None) or resp
-#         if models:
-#             for m in models:
-#                 name = getattr(m, "name", None) or (m.get("name") if isinstance(m, dict) else None)
-#                 if name:
-#                     names.append(name)
-#     except Exception as e:
-#         print("WARN: list_models failed:", e)
-#     return names
-
-
-# def _extract_text_from_response(resp: Any) -> str:
-#     """Robust extraction of text from many SDK response shapes."""
-#     try:
-#         if hasattr(resp, "text") and resp.text:
-#             return resp.text
-#         if hasattr(resp, "output_text") and resp.output_text:
-#             return resp.output_text
+#         if _client_type == "httpx" and isinstance(_client, httpx.AsyncClient):
+#             await _client.aclose()
 #     except Exception:
 #         pass
-
-#     if isinstance(resp, dict):
-#         try:
-#             ch0 = resp.get("results", {}).get("channels", [])[0]
-#             alt0 = ch0.get("alternatives", [])[0]
-#             if alt0.get("transcript"):
-#                 return alt0.get("transcript")
-#         except Exception:
-#             pass
-#         if resp.get("output_text"):
-#             return resp.get("output_text")
-#         if resp.get("text"):
-#             return resp.get("text")
-#         try:
-#             out = resp.get("output", [])
-#             if out:
-#                 c0 = out[0].get("content", [])
-#                 if c0 and isinstance(c0[0], dict) and c0[0].get("text"):
-#                     return c0[0]["text"]
-#         except Exception:
-#             pass
-
-#     try:
-#         out = getattr(resp, "output", None)
-#         if out:
-#             first = out[0]
-#             content = getattr(first, "content", None) or (first.get("content") if isinstance(first, dict) else None)
-#             if content:
-#                 item = content[0]
-#                 text = getattr(item, "text", None) or (item.get("text") if isinstance(item, dict) else None)
-#                 if text:
-#                     return text
-#     except Exception:
-#         pass
-
-#     try:
-#         return str(resp)
-#     except Exception:
-#         return ""
+#     _client = None
+#     _client_type = None
 
 
+# # -----------------------
+# # Helpers
+# # -----------------------
 # def _messages_to_text(messages: List[Dict[str, str]]) -> str:
 #     parts = []
 #     for m in messages:
@@ -432,145 +216,129 @@ def chat_with_messages(messages: List[Dict[str, str]], model: Optional[str] = No
 #     return "\n".join(parts)
 
 
-# def _parse_retry_seconds_from_error(e: Exception) -> Optional[int]:
-#     """Try to parse retryDelay in seconds from google-style error details or text."""
-#     # try dict-like in args
+# def _extract_text_from_response(resp: Any) -> str:
+#     # try common patterns
 #     try:
-#         maybe = e.args[0] if getattr(e, "args", None) else None
-#         if isinstance(maybe, dict):
-#             for d in maybe.get("error", {}).get("details", []):
-#                 if d.get("@type", "").endswith("RetryInfo") and "retryDelay" in d:
-#                     s = d["retryDelay"]
-#                     m = re.search(r"(\d+)", s)
-#                     if m:
-#                         return int(m.group(1))
-#         # fallback regex on string
-#         s = str(e)
-#         m = re.search(r"retry.*?(\d+)\.?s", s, re.IGNORECASE) or re.search(r"retryDelay.*?(\d+)\.?s", s, re.IGNORECASE)
-#         if m:
-#             return int(m.group(1))
+#         if hasattr(resp, "text") and isinstance(resp.text, str) and resp.text:
+#             return resp.text
+#         if hasattr(resp, "output_text") and resp.output_text:
+#             return resp.output_text
 #     except Exception:
 #         pass
-#     return None
+
+#     if isinstance(resp, dict):
+#         if "text" in resp and isinstance(resp["text"], str):
+#             return resp["text"]
+#         if "output_text" in resp and isinstance(resp["output_text"], str):
+#             return resp["output_text"]
+#         # try outputs/results/choices
+#         for key in ("outputs", "results", "choices", "generations"):
+#             outs = resp.get(key)
+#             if isinstance(outs, list) and outs:
+#                 first = outs[0]
+#                 if isinstance(first, dict):
+#                     for k in ("content", "text", "output"):
+#                         if k in first:
+#                             val = first[k]
+#                             if isinstance(val, str):
+#                                 return val
+#                             if isinstance(val, list) and val:
+#                                 # join strings or dict->text
+#                                 if all(isinstance(i, str) for i in val):
+#                                     return "".join(val)
+#                                 try:
+#                                     return "".join([i.get("text", "") for i in val if isinstance(i, dict)])
+#                                 except Exception:
+#                                     pass
+#     try:
+#         return str(resp)
+#     except Exception:
+#         return ""
 
 
-# def chat_with_messages(messages: List[Dict[str, str]], model: Optional[str] = None) -> str:
+# # -----------------------
+# # Main chat function (async)
+# # -----------------------
+# async def chat_with_messages_async(messages: List[Dict[str, str]], model: Optional[str] = None, **call_opts) -> str:
 #     """
-#     Call GenAI in a robust way:
-#     - lazy init client
-#     - try several method shapes
-#     - handle coroutine returns
-#     - provide informative errors for 404 (model not found) and 429 (quota)
+#     Async chat wrapper.
+#     - messages: list of {role, content}
+#     - model: override model (else GROQ_MODEL env or 'groq-1')
+#     - call_opts: forwarded (temperature, max_tokens...) depending on client support
 #     """
-#     client = _init_client()
-#     model = model or os.getenv("GEMINI_MODEL") or "gemini-2.0-flash"
-#     messages_text = _messages_to_text(messages)
+#     global _client, _client_type
+#     if _client is None:
+#         raise RuntimeError("Groq client chưa được khởi tạo. Gọi await init_client() trong startup.")
 
-#     def try_call(fn, *args, **kwargs):
-#         val = None
+#     model = model or os.getenv("GROQ_MODEL") or "groq-1"
+#     prompt = _messages_to_text(messages)
+
+#     # 1) SDK async
+#     if _client_type == "sdk-async":
+#         # assume method client.chat(model=..., messages=..., **call_opts) is coroutine
 #         try:
-#             val = fn(*args, **kwargs)
-#             return _maybe_run_coroutine(val)
-#         except TypeError:
-#             # rethrow to let fallback try different param names
-#             raise
+#             resp = await _client.chat(model=model, messages=messages, **call_opts)
+#             return _extract_text_from_response(resp)
+#         except Exception as e:
+#             # try generate/infer style
+#             pass
 
-#     # 1) try client.chats.create
-#     try:
-#         if hasattr(client, "chats") and hasattr(client.chats, "create"):
-#             try:
-#                 resp = try_call(client.chats.create, model=model, messages=messages)
-#                 return _extract_text_from_response(resp)
-#             except TypeError:
+#     # 2) SDK sync (wrap in executor)
+#     if _client_type == "sdk-sync":
+#         loop = asyncio.get_running_loop()
+#         # try common sync methods in executor
+#         def _sync_call():
+#             # try chat.create or chat or infer or generate in order
+#             if hasattr(_client, "chat"):
 #                 try:
-#                     resp = try_call(client.chats.create, model=model, input=messages_text)
-#                     return _extract_text_from_response(resp)
-#                 except Exception:
-#                     try:
-#                         resp = try_call(client.chats.create, model=model, prompt=messages_text)
-#                         return _extract_text_from_response(resp)
-#                     except Exception as e:
-#                         print("WARN: client.chats.create variants failed:", e)
-#     except Exception as e:
-#         print("WARN: client.chats.create failed:", e)
-
-#     # 2) try older chat.completions shape
-#     try:
-#         if hasattr(client, "chat") and hasattr(client.chat, "completions"):
-#             try:
-#                 resp = try_call(client.chat.completions.create, model=model, messages=messages)
-#                 return _extract_text_from_response(resp)
-#             except TypeError:
-#                 try:
-#                     resp = try_call(client.chat.completions.create, model=model, input=messages_text)
-#                     return _extract_text_from_response(resp)
-#                 except Exception as e:
-#                     print("WARN: client.chat.completions.create fallback failed:", e)
-#     except Exception as e:
-#         print("WARN: client.chat.completions.create failed:", e)
-
-#     # 3) try client.models.generate_content
-#     try:
-#         if hasattr(client, "models") and hasattr(client.models, "generate_content"):
-#             try:
-#                 resp = try_call(client.models.generate_content, model=model, contents=[messages_text])
-#                 return _extract_text_from_response(resp)
-#             except Exception as e:
-#                 # parse specific notable errors
-#                 msg = str(e)
-#                 if "RESOURCE_EXHAUSTED" in msg or "quota" in msg.lower():
-#                     retry = _parse_retry_seconds_from_error(e)
-#                     raise RuntimeError(f"RESOURCE_EXHAUSTED retry_after={retry} {msg}") from e
-#                 if "NOT_FOUND" in msg or "not found" in msg.lower():
-#                     # list models to help debugging
-#                     print("Model not found for generate_content. Available models sample:", list_models()[:50])
-#                     raise RuntimeError(f"MODEL_NOT_FOUND: {msg}") from e
-#                 print("WARN: client.models.generate_content fallback failed:", e)
-#     except Exception as e:
-#         print("WARN: client.models.generate_content failed:", e)
-
-#     # 4) try client.models.generate (other sdks)
-#     try:
-#         if hasattr(client, "models") and hasattr(client.models, "generate"):
-#             try:
-#                 try:
-#                     resp = try_call(client.models.generate, model=model, input=messages_text)
+#                     fn = getattr(_client, "chat")
+#                     # some SDKs expect .chat.create
+#                     if hasattr(fn, "create"):
+#                         return fn.create(model=model, messages=messages, **call_opts)
+#                     return fn(model=model, messages=messages, **call_opts)
 #                 except TypeError:
-#                     resp = try_call(client.models.generate, model=model, prompt=messages_text)
-#                 return _extract_text_from_response(resp)
-#             except Exception as e:
-#                 msg = str(e)
-#                 if "RESOURCE_EXHAUSTED" in msg or "quota" in msg.lower():
-#                     retry = _parse_retry_seconds_from_error(e)
-#                     raise RuntimeError(f"RESOURCE_EXHAUSTED retry_after={retry} {msg}") from e
-#                 if "NOT_FOUND" in msg or "not found" in msg.lower():
-#                     print("Model not found for generate. Available models sample:", list_models()[:50])
-#                     raise RuntimeError(f"MODEL_NOT_FOUND: {msg}") from e
-#                 print("WARN: client.models.generate failed:", e)
-#     except Exception as e:
-#         print("WARN: client.models.generate (outer) failed:", e)
+#                     # try other signatures
+#                     try:
+#                         return fn(model=model, input=_messages_to_text(messages), **call_opts)
+#                     except Exception:
+#                         pass
+#             for name in ("infer", "generate", "create", "predict", "complete"):
+#                 if hasattr(_client, name):
+#                     fn = getattr(_client, name)
+#                     try:
+#                         return fn(model=model, input=prompt, **call_opts)
+#                     except TypeError:
+#                         try:
+#                             return fn(model=model, prompt=prompt, **call_opts)
+#                         except Exception:
+#                             pass
+#             # if nothing matched, raise
+#             raise RuntimeError("No suitable sync method found on SDK client.")
+#         resp = await loop.run_in_executor(None, _sync_call)
+#         return _extract_text_from_response(resp)
 
-#     # 5) last resort: plain text calls
-#     try:
-#         if hasattr(client, "predict"):
-#             try:
-#                 resp = try_call(client.predict, model=model, input=messages_text)
-#                 return _extract_text_from_response(resp)
-#             except Exception as e:
-#                 print("WARN: client.predict failed:", e)
-#         if hasattr(client, "complete"):
-#             try:
-#                 resp = try_call(client.complete, model=model, prompt=messages_text)
-#                 return _extract_text_from_response(resp)
-#             except Exception as e:
-#                 print("WARN: client.complete failed:", e)
-#     except Exception as e:
-#         print("WARN: fallback plain text calls failed:", e)
+#     # 3) HTTPX fallback
+#     if _client_type == "httpx":
+#         # default REST shape: POST /models/{model}/infer with {"input": "..."}
+#         url = f"/models/{model}/infer"
+#         payload = {"input": prompt}
+#         # merge call_opts (e.g., temperature, max_tokens) if provided
+#         payload.update(call_opts or {})
+#         assert isinstance(_client, httpx.AsyncClient)
+#         resp = await _client.post(url, json=payload)
+#         resp.raise_for_status()
+#         data = resp.json()
+#         return _extract_text_from_response(data)
 
-#     # If nothing worked, show helpful debug
-#     client_attrs = [n for n in dir(client) if not n.startswith("_")]
-#     raise RuntimeError(
-#         "Không thể gọi Gemini/GenAI: SDK hiện tại không hỗ trợ phương thức mong đợi.\n"
-#         f"Client attrs sample: {client_attrs[:80]}\n"
-#         "Gọi list_models() để biết tên model khả dụng hoặc kiểm tra GEMINI_MODEL env."
-#     )
+#     # unknown client type
+#     raise RuntimeError(f"Unsupported client type: {_client_type}")
+
+
+# # Optional quick async test
+# async def quick_test_async():
+#     if _client is None:
+#         print("Client chưa sẵn sàng. Gọi init_client() trước.")
+#         return
+#     model = os.getenv("GROQ_MODEL", "groq-1")
+#     out = await chat_with_messages_async([{"role": "user", "content": "Xin chào Groq!"}], model=model)
+#     print("Quick test output:", out)

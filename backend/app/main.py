@@ -9,24 +9,25 @@ from bson import ObjectId
 
 from app.db import connect_to_mongo, db, close_mongo
 from app.api import voice_chat, stt
+from app.services import llm_service  # ← Thêm import này
 
 # Load environment variables
-BASE_DIR = Path(__file__).resolve().parent.parent  # backend/
+BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 # Verify API keys
+groq_key = os.getenv("GROQ_API_KEY")
 deepgram_key = os.getenv("DEEPGRAM_API_KEY")
-gemini_key = os.getenv("GEMINI_API_KEY")
 
+if not groq_key:
+    print("⚠️ WARNING: GROQ_API_KEY not found")
 if not deepgram_key:
     print("⚠️ WARNING: DEEPGRAM_API_KEY not found")
-if not gemini_key:
-    print("⚠️ WARNING: GEMINI_API_KEY not found")
 
 # FastAPI app
 app = FastAPI(
     title="Voice Chat AI",
-    description="AI Voice Chat with Deepgram STT",
+    description="AI Voice Chat with Deepgram STT and Groq LLM",
     version="1.0.0"
 )
 
@@ -45,7 +46,7 @@ app.add_middleware(
 )
 
 # Static files
-APP_DIR = Path(__file__).resolve().parent  # /app
+APP_DIR = Path(__file__).resolve().parent
 app.mount(
     "/temp_tts",
     StaticFiles(directory=str(APP_DIR / "temp_tts")),
@@ -60,23 +61,37 @@ app.include_router(stt.router, prefix="/api", tags=["Speech-to-Text"])
 @app.get("/")
 def root():
     return {
-        "message": "Voice Chat AI",
+        "message": "Voice Chat AI with Groq",
         "endpoints": {
             "voice_chat": "/api/voice-chat",
             "stt": "/api/speech-to-text",
-            "languages": "/api/supported-languages"
         }
     }
 
 # Startup & Shutdown events
+# backend/app/main.py (chỉ phần startup/shutdown)
+
 @app.on_event("startup")
-async def startup_db_event():
+async def startup_event():
+    print("🚀 Starting up...")
     await connect_to_mongo()
+    
+    # Initialize Groq LLM client
+    from app.services import llm_service
+    await llm_service.init_client()
+    
+    print("✅ All services initialized")
 
 @app.on_event("shutdown")
-async def shutdown_db_event():
+async def shutdown_event():
+    print("🛑 Shutting down...")
     await close_mongo()
-
+    
+    # Close Groq client
+    from app.services import llm_service
+    await llm_service.close_client()
+    
+    print("✅ Cleanup complete")
 # Dependency
 async def get_db():
     return db
