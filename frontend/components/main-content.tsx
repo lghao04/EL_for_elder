@@ -10,24 +10,24 @@ interface MainContentProps {
 
 export default function MainContent({ activeTab, setActiveTab, difficulty }: MainContentProps) {
   return (
-    <div className="flex flex-col gap-6 h-full">
-      {/* Large Tab Bar */}
-      <div className="flex gap-4">
+    <div className="flex flex-col gap-6 flex-1">
+      {/* Tab Bar */}
+      <div className="flex gap-3">
         <button
           onClick={() => setActiveTab("listen")}
-          className={`flex-1 py-6 px-8 rounded-2xl text-3xl font-bold transition-all shadow-lg ${
-            activeTab === "listen" ? "bg-green-400 text-white scale-105" : "bg-white text-green-600 hover:bg-green-50"
+          className={`px-8 py-3 rounded-lg font-semibold transition-all ${
+            activeTab === "listen" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
           }`}
         >
-          👂 LISTEN
+          👂 Listen
         </button>
         <button
           onClick={() => setActiveTab("speak")}
-          className={`flex-1 py-6 px-8 rounded-2xl text-3xl font-bold transition-all shadow-lg ${
-            activeTab === "speak" ? "bg-pink-400 text-white scale-105" : "bg-white text-pink-600 hover:bg-pink-50"
+          className={`px-8 py-3 rounded-lg font-semibold transition-all ${
+            activeTab === "speak" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
           }`}
         >
-          🎤 SPEAK
+          🔧 Speak
         </button>
       </div>
 

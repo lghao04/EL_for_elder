@@ -7,9 +7,9 @@ from pathlib import Path
 import os
 from bson import ObjectId
 
-from app.db import connect_to_mongo, db, close_mongo
+from app.db import  db
 from app.api import voice_chat, stt
-from app.services import llm_service  # ← Thêm import này
+
 
 # Load environment variables
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -68,13 +68,11 @@ def root():
         }
     }
 
-# Startup & Shutdown events
-# backend/app/main.py (chỉ phần startup/shutdown)
 
 @app.on_event("startup")
 async def startup_event():
     print("🚀 Starting up...")
-    await connect_to_mongo()
+    # await connect_to_mongo()
     
     # Initialize Groq LLM client
     from app.services import llm_service
@@ -85,7 +83,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     print("🛑 Shutting down...")
-    await close_mongo()
+    # await close_mongo()
     
     # Close Groq client
     from app.services import llm_service
@@ -96,16 +94,3 @@ async def shutdown_event():
 async def get_db():
     return db
 
-# Users endpoints
-@app.post("/users")
-async def create_user(payload: dict, db=Depends(get_db)):
-    result = await db.users.insert_one(payload)
-    return {"_id": str(result.inserted_id)}
-
-@app.get("/users/{user_id}")
-async def get_user(user_id: str, db=Depends(get_db)):
-    doc = await db.users.find_one({"_id": ObjectId(user_id)})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Not found")
-    doc["_id"] = str(doc["_id"])
-    return doc

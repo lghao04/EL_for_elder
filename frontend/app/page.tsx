@@ -12,8 +12,7 @@ export default function Home() {
   const { language, setLanguage } = useLanguage()
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-100 via-yellow-50 to-green-100 flex flex-col">
-      {/* Header */}
+    <div className="min-h-screen bg-background flex flex-col">
       <Header userAvatar="👤" onLanguageChange={setLanguage} currentLanguage={language} />
 
       {/* Main Container */}
