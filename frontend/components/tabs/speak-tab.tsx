@@ -37,6 +37,8 @@ export default function SpeakTab({ difficulty }: SpeakTabProps) {
   }
 
   return (
+
+    
     <div className="flex items-center justify-center min-h-96">
       <button
         onClick={handleStartPractice}
