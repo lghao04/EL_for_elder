@@ -19,7 +19,7 @@ export default function MainContent({ activeTab, setActiveTab, difficulty }: Mai
             activeTab === "listen" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
           }`}
         >
-          👂 Listen
+          👂 Listening
         </button>
         <button
           onClick={() => setActiveTab("speak")}
@@ -27,7 +27,7 @@ export default function MainContent({ activeTab, setActiveTab, difficulty }: Mai
             activeTab === "speak" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
           }`}
         >
-          🔧 Speak
+          🔧 Speaking
         </button>
       </div>
 
