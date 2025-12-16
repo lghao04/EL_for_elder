@@ -28,7 +28,7 @@ export default function LoginPage() {
 
       if (isLogin) {
         // Login
-        response = await loginUser(email, password)
+        response = await loginUser(username, password)
       } else {
         // Register
         if (!username) {
@@ -108,31 +108,33 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           {!isLogin && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
               <Input
-                type="text"
-                placeholder="Enter your username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required={!isLogin}
+                type="email"
+                placeholder="Enter your email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
                 className="w-full text-lg py-6"
                 disabled={loading}
               />
             </div>
           )}
 
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
             <Input
-              type="email"
-              placeholder="Enter your email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              type="text"
+              placeholder="Enter your username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               required
               className="w-full text-lg py-6"
               disabled={loading}
             />
           </div>
+
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>

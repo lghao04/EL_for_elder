@@ -2,7 +2,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from app.db import get_db
 from app.services.lesson_service import LessonService
-from app.services.tts_service import text_to_speech
 from pathlib import Path
 import hashlib
 
@@ -39,15 +38,18 @@ def get_or_create_audio(story_text: str, lesson_id: str, lang: str = "en") -> st
         print(f"❌ Error generating audio: {e}")
         return None
 
+
 @router.get("/lessons/{lesson_id}/story")
 def get_lesson_story(lesson_id: str, db = Depends(get_db)):
-    """Lấy story của lesson"""
+    """Lấy story của lesson (original story)"""
     collection = db["lessons"]
     svc = LessonService(collection)
+    # Always use original story (use_short=False)
     story = svc.get_story(lesson_id)
     if story is None:
         raise HTTPException(status_code=404, detail="Lesson not found")
-    return {"id": lesson_id, "story": story}
+    return {"id": lesson_id, "story": story, "story_type": "original"}
+
 
 @router.get("/lessons/{lesson_id}")
 def get_full_lesson(lesson_id: str, lang: str = "en", db = Depends(get_db)):
@@ -57,11 +59,13 @@ def get_full_lesson(lesson_id: str, lang: str = "en", db = Depends(get_db)):
         - lang: ngôn ngữ cho audio (en, vi, etc.)
     """
     svc = LessonService(db["lessons"])
+    # Get lesson với original story (use_short=False)
     doc = svc.get_full_lesson(lesson_id)
+    
     if not doc:
         raise HTTPException(status_code=404, detail="Lesson not found")
     
-    # Lấy story
+    # Lấy original story
     story = doc.get("story", "")
     
     # Tạo audio cho story (with caching)
@@ -74,18 +78,14 @@ def get_full_lesson(lesson_id: str, lang: str = "en", db = Depends(get_db)):
     # Lấy questions với correct answer
     questions = svc.get_questions_with_correct_answer_text(lesson_id)
     
-    # Trả về data hoàn chỉnh
+    # Trả về data đơn giản
     return {
         "id": doc.get("id", lesson_id),
-        "_id": str(doc.get("_id", "")),
         "story": story,
-        "audio_url": audio_url,  # URL để frontend fetch audio
+        "audio_url": audio_url,
         "questions": questions,
-        # Các field khác nếu có
-        "title": doc.get("title", f"Lesson {lesson_id}"),
-        "difficulty": doc.get("difficulty", "medium"),
-        "topic": doc.get("topic", ""),
     }
+
 
 @router.get("/lessons/{lesson_id}/questions")
 def get_questions(lesson_id: str, db = Depends(get_db)):
@@ -94,22 +94,37 @@ def get_questions(lesson_id: str, db = Depends(get_db)):
     qs = svc.get_questions_with_correct_answer_text(lesson_id)
     return {"id": lesson_id, "questions": qs}
 
+
 @router.get("/lessons")
-def list_lessons(limit: int = 50, skip: int = 0, db = Depends(get_db)):
+def list_lessons(skip: int = 0, db = Depends(get_db)):
     """
-    Lấy danh sách tất cả lessons (for lesson selection page)
+    Lấy danh sách tất cả lessons
     Query params:
-        - limit: số lượng lessons (default 50)
         - skip: bỏ qua bao nhiêu lessons (for pagination)
     """
-    svc = LessonService(db["lessons"])
-    lessons = svc.list_all_lessons(limit=limit, skip=skip)
+    # Sort by id to ensure consistent order
+    cursor = db["lessons"].find({}, {
+        "id": 1,
+        "_id": 1
+    }).sort("id", 1).skip(skip)
+    
+    lessons = []
+    for doc in cursor:
+        lesson_data = {
+            "id": doc.get("id", str(doc["_id"])),
+        }
+        lessons.append(lesson_data)
+    
+    print(f"📚 Returning {len(lessons)} lessons")
+    if lessons:
+        print(f"   First: {lessons[0]['id']}")
+        print(f"   Last: {lessons[-1]['id']}")
+    
     return {
         "lessons": lessons,
-        "count": len(lessons),
-        "limit": limit,
-        "skip": skip
+        "count": len(lessons)
     }
+
 
 @router.post("/lessons/{lesson_id}/regenerate-audio")
 def regenerate_audio(lesson_id: str, lang: str = "en", db = Depends(get_db)):
@@ -118,6 +133,7 @@ def regenerate_audio(lesson_id: str, lang: str = "en", db = Depends(get_db)):
     Useful khi muốn đổi giọng hoặc update story.
     """
     svc = LessonService(db["lessons"])
+    # Always use original story
     story = svc.get_story(lesson_id)
     
     if not story:

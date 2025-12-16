@@ -38,19 +38,20 @@ export async function registerUser(email: string, username: string, password: st
 }
 
 // Login user
-export async function loginUser(email: string, password: string): Promise<AuthResponse> {
+export async function loginUser(username: string, password: string): Promise<AuthResponse> {
   const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ username, password }),
   });
 
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(data.message || 'Login failed');
+    // Lấy đúng lỗi BE: detail → message → fallback
+    throw new Error(data.detail || data.message || 'Login failed');
   }
 
   return data;

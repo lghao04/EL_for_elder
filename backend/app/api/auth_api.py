@@ -20,7 +20,7 @@ class RegisterRequest(BaseModel):
     password: str
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    username: str
     password: str
 
 class UserResponse(BaseModel):
@@ -79,7 +79,7 @@ async def login(request: LoginRequest, db = Depends(get_db)):
     """API đăng nhập"""
     success, message, user_data = login_user(
         db,
-        request.email,
+        request.username,
         request.password
     )
     

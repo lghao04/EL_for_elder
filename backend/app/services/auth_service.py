@@ -104,60 +104,51 @@ def register_user(db, email: str, username: str, password: str) -> Tuple[bool, s
         print(f"Register error: {e}")
         return False, f"Lỗi: {str(e)}", None
 
-def login_user(db, email: str, password: str) -> Tuple[bool, str, Optional[dict]]:
-    """
-    Đăng nhập user
-    
-    Returns:
-        (success: bool, message: str, data: dict or None)
-    """
+def login_user(db, username: str, password: str) -> Tuple[bool, str, Optional[dict]]:
     try:
         users_collection = db['users']
-        
-        # Validate input
-        if not email or not password:
-            return False, "Email và password không được để trống", None
-        
-        # Tìm user theo email
-        user = users_collection.find_one({'email': email.lower().strip()})
-        
+
+        if not username or not password:
+            return False, "Username và password không được để trống", None
+
+        # Tìm user theo username
+        user = users_collection.find_one({'username': username.lower().strip()})
+
+        # ❌ Username không tồn tại
         if not user:
-            return False, "Email hoặc password không đúng", None
-        
-        # Kiểm tra account có active không
+            return False, "Username không tồn tại", None
+
+        # ❌ Tài khoản bị khóa
         if not user.get('is_active', True):
             return False, "Tài khoản đã bị vô hiệu hóa", None
-        
-        # Verify password
+
+        # ❌ Password sai
         if not verify_password(password, user['password_hash']):
-            return False, "Email hoặc password không đúng", None
-        
-        # Tạo token
+            return False, "Password không đúng", None
+
+        # ✔ Đăng nhập thành công
         user_id = str(user['_id'])
         token = create_access_token({
             "user_id": user_id,
-            "email": user['email']
+            "username": user['username']
         })
-        
-        # Cập nhật last login
+
         users_collection.update_one(
             {'_id': user['_id']},
             {'$set': {'last_login': datetime.utcnow()}}
         )
-        
-        # Trả về thông tin user
-        user_data = {
+
+        return True, "Đăng nhập thành công", {
             'user_id': user_id,
             'email': user['email'],
             'username': user['username'],
             'token': token
         }
-        
-        return True, "Đăng nhập thành công", user_data
-        
+
     except Exception as e:
         print(f"Login error: {e}")
         return False, f"Lỗi: {str(e)}", None
+
 
 def get_user_from_token(db, token: str) -> Optional[dict]:
     """

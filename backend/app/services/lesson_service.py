@@ -33,27 +33,20 @@ class LessonService:
         return {"id": mongo_id_or_custom_id}
 
     def get_full_lesson(self, mongo_id_or_custom_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Return the whole lesson document (story + questions + other fields)
-        
-        Args:
-            mongo_id_or_custom_id: Either MongoDB _id or custom id like 'mc160.train.0'
-            
-        Returns:
-            Full lesson document or None if not found
-        """
         q = self._build_query(mongo_id_or_custom_id)
         doc = self.col.find_one(q)
         
         if doc:
-            # Convert ObjectId to string for JSON serialization
             doc["_id"] = str(doc["_id"])
-            
-            # Ensure 'id' field exists (use custom id or fallback to _id)
+
             if "id" not in doc:
                 doc["id"] = doc["_id"]
-                
+
+            # NEW
+            doc["score"] = doc.get("score")
+
         return doc
+
 
     def get_story(self, mongo_id_or_custom_id: str) -> Optional[str]:
         """
@@ -157,44 +150,30 @@ class LessonService:
         return out
 
     def list_all_lessons(self, limit: int = 100, skip: int = 0) -> List[Dict[str, Any]]:
-        """
-        List all lessons with pagination.
-        Useful for displaying lesson list on frontend.
-        
-        Args:
-            limit: Maximum number of lessons to return
-            skip: Number of lessons to skip (for pagination)
-            
-        Returns:
-            List of lesson documents (with _id as string)
-        """
+       
         cursor = self.col.find({}, {
             "id": 1,
             "story": 1,
             "_id": 1,
-            "questions": 1
+            "questions": 1,
+            "score": 1   # NEW
         }).skip(skip).limit(limit)
-        
+
         lessons = []
         for doc in cursor:
             doc["_id"] = str(doc["_id"])
             if "id" not in doc:
                 doc["id"] = doc["_id"]
-            lessons.append(doc)
+
+            doc["score"] = doc.get("score")   # NEW
             
+            lessons.append(doc)
+
         return lessons
+
     
     def search_lessons_by_keyword(self, keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
-        """
-        Search lessons by keyword in story text.
-        
-        Args:
-            keyword: Search term
-            limit: Maximum results
-            
-        Returns:
-            List of matching lessons
-        """
+       
         query = {
             "$or": [
                 {"story": {"$regex": keyword, "$options": "i"}},
@@ -205,19 +184,24 @@ class LessonService:
         cursor = self.col.find(query, {
             "id": 1,
             "story": 1,
-            "_id": 1
+            "_id": 1,
+            "score": 1  # NEW
         }).limit(limit)
-        
+
         lessons = []
         for doc in cursor:
             doc["_id"] = str(doc["_id"])
             if "id" not in doc:
                 doc["id"] = doc["_id"]
-            # Truncate story for preview
+            
+            doc["score"] = doc.get("score")  # NEW
+
             if "story" in doc:
                 doc["story_preview"] = doc["story"][:200] + "..." if len(doc["story"]) > 200 else doc["story"]
+
             lessons.append(doc)
-            
+
+                
         return lessons
 
     # Utility: validate questions schema

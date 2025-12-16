@@ -46,14 +46,16 @@ app.mount(
 )
 
 # Include routers
-from app.api.auth_api import router as auth_router  # ✅ NEW: Auth router
+from app.api.auth_api import router as auth_router
 from app.api.voice_chat import router as voice_router
 from app.api.stt import router as stt_router
 from app.api.lesson import router as lessons_router
+from app.api.progress import router as progress_router  # 🆕 NEW
 
-# ✅ Auth routes FIRST (for login/register at root)
+# Auth routes FIRST (for login/register at root)
 app.include_router(auth_router, prefix="/api", tags=["Authentication"])
 app.include_router(lessons_router, prefix="/api", tags=["Lessons"])
+app.include_router(progress_router, prefix="/api", tags=["Progress"])
 app.include_router(voice_router, prefix="/api", tags=["Voice Chat"])
 app.include_router(stt_router, prefix="/api", tags=["Speech-to-Text"])
 
@@ -69,9 +71,24 @@ def root():
                 "login": "/api/auth/login",
                 "me": "/api/auth/me",
             },
-            "lessons": "/api/lessons/{lesson_id}",
+            "lessons": {
+                "get_lesson": "/api/lessons/{lesson_id}?use_short=true",
+                "list_lessons": "/api/lessons?limit=50",
+                "get_story": "/api/lessons/{lesson_id}/story",
+                "get_questions": "/api/lessons/{lesson_id}/questions",
+            },
+            "progress": {
+                "record_completion": "/api/progress/complete",
+                "get_all_progress": "/api/progress/all",
+                "get_stats": "/api/progress/stats",
+                "leaderboard": "/api/progress/leaderboard",
+            },
             "voice_chat": "/api/voice-chat",
             "stt": "/api/speech-to-text",
+        },
+        "notes": {
+            "short_story": "By default, API returns short_story (faster audio). Use ?use_short=false for original.",
+            "audio": "Audio files are cached in /temp_tts directory"
         }
     }
 
@@ -80,17 +97,30 @@ def root():
 async def startup_event():
     print("🚀 Starting up...")
     
-
+    # Create temp_tts directory
     TEMP_TTS_DIR.mkdir(exist_ok=True)
     print(f"✅ Created temp_tts directory: {TEMP_TTS_DIR}")
     
-    #kết nối MongoDB
+    # Connect MongoDB
     try:
         init_db()
-        print("✅ MongoDB connected")
+        db = get_db()
+        
+        # 💡 OPTIONAL: Check if short_stories exist
+        lessons_with_short = db["lessons"].count_documents({"short_story": {"$exists": True}})
+        total_lessons = db["lessons"].count_documents({})
+        
+        print(f"✅ MongoDB connected")
+        print(f"   📚 Total lessons: {total_lessons}")
+        print(f"   📝 Lessons with short_story: {lessons_with_short}")
+        
+        if lessons_with_short == 0:
+            print(f"   ⚠️  No short stories found! Run: python summarize_lessons_simple.py")
+        
     except Exception as e:
         print("❌ init_db raised:", e)
 
+    # Initialize Groq LLM
     try:
         from app.services import llm_service
         await llm_service.init_client()
@@ -101,12 +131,19 @@ async def startup_event():
     print("✅ All services initialized")
     print("\n" + "="*70)
     print("📝 API Endpoints:")
-    print("   POST   /api/auth/register")
-    print("   POST   /api/auth/login")
-    print("   GET    /api/auth/me (protected)")
-    print("   GET    /api/lessons/{lesson_id}")
-    print("   POST   /api/voice-chat")
-    print("   POST   /api/speech-to-text")
+    print("   Authentication:")
+    print("      POST   /api/auth/register")
+    print("      POST   /api/auth/login")
+    print("      GET    /api/auth/me (protected)")
+    print("\n   Lessons:")
+    print("      GET    /api/lessons/{id}?use_short=true (default)")
+    print("      GET    /api/lessons/{id}?use_short=false (original)")
+    print("      GET    /api/lessons/{id}/story")
+    print("      GET    /api/lessons/{id}/questions")
+    print("      GET    /api/lessons?limit=50")
+    print("\n   Voice & TTS:")
+    print("      POST   /api/voice-chat")
+    print("      POST   /api/speech-to-text")
     print("="*70 + "\n")
 
 
@@ -114,12 +151,13 @@ async def startup_event():
 async def shutdown_event():
     print("🛑 Shutting down...")
     
-    # Đóng kết nối MongoDB
+    # Close MongoDB connection
     try:
         close_db()
     except Exception as e:
         print("❌ close_db raised:", e)
 
+    # Close Groq client
     try:
         from app.services import llm_service
         await llm_service.close_client()

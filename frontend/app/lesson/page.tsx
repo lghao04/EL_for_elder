@@ -1,9 +1,8 @@
-
 "use client"
 
 import { useSearchParams, useRouter } from "next/navigation"
 import Header from "../../components/header"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 
 // Định nghĩa kiểu dữ liệu cho Question
 interface Question {
@@ -18,44 +17,43 @@ interface Question {
 // Định nghĩa kiểu dữ liệu cho Lesson
 interface LessonData {
   id: string;
-  _id?: string;
-  title: string;
   story: string;
   audio_url?: string;
   questions: Question[];
-  difficulty?: "easy" | "medium" | "hard";
-  topic?: string;
+  score: number;
 }
+
+type PlaybackSpeed = 0.75 | 1 | 1.25;
 
 export default function LessonPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const [currentLanguage, setCurrentLanguage] = useState("en")
+  const audioRef = useRef<HTMLAudioElement>(null)
 
   // Lấy ID từ URL
   const lessonId = searchParams.get("id") || "1"
 
-  // State để lưu dữ liệu từ BE
+  // State
   const [lesson, setLesson] = useState<LessonData | null>(null) 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [audioLoading, setAudioLoading] = useState(false)
+  const [playbackSpeed, setPlaybackSpeed] = useState<PlaybackSpeed>(1)
   
   // State cho questions
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [selectedAnswers, setSelectedAnswers] = useState<{[key: number]: number}>({})
   const [showResults, setShowResults] = useState(false)
 
-  // Gọi API khi component được mount hoặc language thay đổi
+  // Gọi API khi component được mount
   useEffect(() => {
     const fetchLessonData = async () => {
       try {
         setLoading(true)
         setAudioLoading(true)
         
-        // Gọi API với language parameter
         const response = await fetch(
-          `http://localhost:8000/api/lessons/${lessonId}?`
+          `http://localhost:8000/api/lessons/${lessonId}`
         )
         
         if (!response.ok) {
@@ -77,7 +75,15 @@ export default function LessonPage() {
     if (lessonId) {
       fetchLessonData()
     }
-  }, [lessonId, currentLanguage])
+  }, [lessonId])
+
+  // Handle playback speed change
+  const handleSpeedChange = (speed: PlaybackSpeed) => {
+    setPlaybackSpeed(speed)
+    if (audioRef.current) {
+      audioRef.current.playbackRate = speed
+    }
+  }
 
   // Xử lý chọn answer
   const handleSelectAnswer = (questionIndex: number, answerIndex: number) => {
@@ -85,29 +91,6 @@ export default function LessonPage() {
       ...prev,
       [questionIndex]: answerIndex
     }))
-  }
-
-  // Xử lý next question
-  const handleNext = () => {
-    if (currentQuestionIndex < (lesson?.questions.length || 0) - 1) {
-      setCurrentQuestionIndex(prev => prev + 1)
-    } else {
-      setShowResults(true)
-    }
-  }
-
-  // Xử lý previous question
-  const handlePrevious = () => {
-    if (currentQuestionIndex > 0) {
-      setCurrentQuestionIndex(prev => prev - 1)
-    }
-  }
-
-  // Reset quiz
-  const handleRetry = () => {
-    setSelectedAnswers({})
-    setCurrentQuestionIndex(0)
-    setShowResults(false)
   }
 
   // Tính điểm
@@ -122,13 +105,97 @@ export default function LessonPage() {
     return correct
   }
 
+  // Save progress to backend
+  const saveProgressToBackend = async (lessonId: string, score: number) => {
+    try {
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        console.log('⚠️ No auth token, cannot save progress')
+        return
+      }
+
+      console.log('💾 Saving progress to backend:', { lessonId, score })
+
+      const response = await fetch('http://localhost:8000/api/progress', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          lesson_id: lessonId,
+          score: score
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log('✅ Progress saved to backend:', data)
+      } else {
+        const errorText = await response.text()
+        console.error('❌ Failed to save progress:', response.status, errorText)
+      }
+    } catch (error) {
+      console.error('❌ Error saving progress:', error)
+    }
+  }
+
+  // Xử lý next question
+  const handleNext = () => {
+    if (currentQuestionIndex < (lesson?.questions.length || 0) - 1) {
+      // Chuyển sang câu hỏi tiếp theo
+      setCurrentQuestionIndex(prev => prev + 1)
+    } else {
+      // Câu hỏi cuối cùng - Submit quiz
+      console.log('🎯 Submitting quiz...')
+      
+      // Tính điểm
+      const score = calculateScore()
+      console.log('📊 Score:', score, 'out of', lesson?.questions.length)
+      console.log('📝 Lesson ID:', lesson?.id)
+      
+      // Gọi popup + save DB
+      if (typeof window !== 'undefined' && lesson?.id) {
+        // Try to call global function from ListenTab first
+        if ((window as any).handleQuizComplete) {
+          console.log('✅ Calling handleQuizComplete from ListenTab')
+          ;(window as any).handleQuizComplete(lesson.id, score, lesson.questions.length)
+        } else {
+          // Fallback: Save directly if ListenTab not mounted
+          console.log('⚠️ handleQuizComplete not found, saving directly...')
+          saveProgressToBackend(lesson.id, score)
+        }
+      }
+      
+      // Show results sau 1.5s (để user xem popup trước)
+      setTimeout(() => {
+        console.log('📋 Showing results...')
+        setShowResults(true)
+      }, 1500)
+    }
+  }
+
+  const handlePrevious = () => {
+    if (currentQuestionIndex > 0) {
+      setCurrentQuestionIndex(prev => prev - 1)
+    }
+  }
+
+  // Reset quiz
+  const handleRetry = () => {
+    setSelectedAnswers({})
+    setCurrentQuestionIndex(0)
+    setShowResults(false)
+  }
+
   // Loading state
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-100 via-yellow-100 to-pink-100">
         <div className="text-center">
           <div className="text-3xl font-bold text-blue-600 animate-pulse mb-4">
-            🎵 Generating Audio...
+            🎵 Loading Lesson...
           </div>
           <div className="text-lg text-gray-600">
             Please wait while we prepare your lesson
@@ -165,10 +232,7 @@ export default function LessonPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 via-yellow-100 to-pink-100">
-      <Header 
-        userAvatar="👧" 
-       
-      />
+      <Header userAvatar="👧" />
 
       <div className="p-6">
         <div className="max-w-4xl mx-auto">
@@ -179,67 +243,111 @@ export default function LessonPage() {
             ← Back to Lessons
           </button>
 
-          {/* Story Section with Audio */}
+          {/* Audio Section */}
           <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
-            <div className="flex justify-between items-start mb-4">
+            <div className="flex justify-between items-start mb-6">
               <div>
                 <h1 className="text-3xl font-bold text-gray-800 mb-2">
-                  {lesson.title || `Lesson ${lessonId}`}
+                  🎧 Listening Practice
                 </h1>
-                {lesson.topic && (
-                  <p className="text-gray-600 text-sm">📚 Topic: {lesson.topic}</p>
-                )}
-                {lesson.difficulty && (
-                  <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold mt-2 ${
-                    lesson.difficulty === "easy" ? "bg-green-100 text-green-700" :
-                    lesson.difficulty === "medium" ? "bg-yellow-100 text-yellow-700" :
-                    "bg-red-100 text-red-700"
-                  }`}>
-                    {lesson.difficulty.toUpperCase()}
-                  </span>
-                )}
               </div>
             </div>
             
             {/* Audio Player */}
             {audioLoading ? (
-              <div className="mb-6 p-4 bg-blue-50 rounded-lg text-center">
+              <div className="p-6 bg-blue-50 rounded-lg text-center">
                 <p className="text-sm font-semibold text-gray-600 animate-pulse">
                   🎵 Generating audio...
                 </p>
               </div>
             ) : lesson.audio_url ? (
-              <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border-2 border-blue-200">
-                <div className="flex items-center mb-2">
-                  <span className="text-2xl mr-2">🎧</span>
-                  <p className="text-sm font-semibold text-gray-700">
-                    Listen to the story
-                  </p>
+              <div className="p-6 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border-2 border-blue-200">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center">
+                    <span className="text-3xl mr-3">🎧</span>
+                    <div>
+                      <p className="text-lg font-bold text-gray-800">
+                        Listen to the story
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        Answer the questions based on what you hear
+                      </p>
+                    </div>
+                  </div>
                 </div>
+
+                {/* Audio Element */}
                 <audio 
+                  ref={audioRef}
                   controls 
-                  className="w-full"
+                  className="w-full mb-4"
                   src={`http://localhost:8000${lesson.audio_url}`}
                   preload="metadata"
+                  onLoadedMetadata={() => {
+                    if (audioRef.current) {
+                      audioRef.current.playbackRate = playbackSpeed
+                    }
+                  }}
                 >
                   Your browser does not support the audio element.
                 </audio>
+
+                {/* Playback Speed Controls */}
+                <div className="flex items-center justify-center gap-3 pt-4 border-t border-blue-200">
+                  <span className="text-sm font-semibold text-gray-700 mr-2">
+                    ⚡ Speed:
+                  </span>
+                  <button
+                    onClick={() => handleSpeedChange(0.75)}
+                    className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                      playbackSpeed === 0.75
+                        ? "bg-blue-500 text-white shadow-md scale-105"
+                        : "bg-white text-gray-700 border-2 border-gray-300 hover:border-blue-300"
+                    }`}
+                  >
+                    🐢 Slow (0.75x)
+                  </button>
+                  <button
+                    onClick={() => handleSpeedChange(1)}
+                    className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                      playbackSpeed === 1
+                        ? "bg-blue-500 text-white shadow-md scale-105"
+                        : "bg-white text-gray-700 border-2 border-gray-300 hover:border-blue-300"
+                    }`}
+                  >
+                    ▶️ Normal (1x)
+                  </button>
+                  <button
+                    onClick={() => handleSpeedChange(1.25)}
+                    className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                      playbackSpeed === 1.25
+                        ? "bg-blue-500 text-white shadow-md scale-105"
+                        : "bg-white text-gray-700 border-2 border-gray-300 hover:border-blue-300"
+                    }`}
+                  >
+                    🚀 Fast (1.25x)
+                  </button>
+                </div>
               </div>
             ) : (
-              <div className="mb-6 p-4 bg-yellow-50 rounded-lg border-2 border-yellow-200">
+              <div className="p-6 bg-yellow-50 rounded-lg border-2 border-yellow-200">
                 <p className="text-sm text-yellow-700">
                   ⚠️ Audio not available for this lesson
                 </p>
               </div>
             )}
 
-            {/* Story Text */}
-            <div className="prose max-w-none">
-              <div className="bg-gray-50 rounded-lg p-6 border-l-4 border-blue-500">
-                <p className="text-lg text-gray-700 leading-relaxed whitespace-pre-wrap">
-                  {lesson.story}
-                </p>
-              </div>
+            {/* Listening Tips */}
+            <div className="mt-6 p-4 bg-blue-50 rounded-lg border-l-4 border-blue-500">
+              <p className="text-sm font-semibold text-blue-800 mb-2">
+                💡 Listening Tips:
+              </p>
+              <ul className="text-sm text-gray-700 space-y-1 ml-4 list-disc">
+                <li>Listen to the audio 2-3 times before answering</li>
+                <li>Use slow speed if you need more time to understand</li>
+                <li>Focus on key information that answers the questions</li>
+                <li>Take notes if needed!</li>
+              </ul>
             </div>
           </div>
 
@@ -348,12 +456,12 @@ export default function LessonPage() {
                 </div>
                 <p className="text-xl text-gray-600">
                   {percentage === 100 
-                    ? "Perfect Score! 🎉🏆" 
+                    ? "Perfect Listening! 🎉🏆" 
                     : percentage >= 70 
-                    ? "Great job! 👏✨" 
+                    ? "Great listening skills! 👏✨" 
                     : percentage >= 50
-                    ? "Good effort! 💪📚"
-                    : "Keep practicing! 🌱💫"}
+                    ? "Good effort! Keep practicing! 💪📚"
+                    : "Try listening again! 🎧💫"}
                 </p>
               </div>
 
