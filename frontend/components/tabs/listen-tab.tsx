@@ -219,11 +219,30 @@ export default function ListenTab() {
       if (response.ok) {
         const data = await response.json()
         console.log('✅ Progress saved successfully:', data)
+        
         // Refresh progress data
         await fetchProgress()
-        await fetch("http://localhost:8000/api/progress/streak", {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+        
+        // 🔥 Fetch streak data và dispatch event
+        try {
+          const streakResponse = await fetch("http://localhost:8000/api/progress/streak", {
+            headers: { Authorization: `Bearer ${token}` }
+          })
+          
+          if (streakResponse.ok) {
+            const streakData = await streakResponse.json()
+            console.log('🔥 Streak data fetched:', streakData)
+            
+            // 🔥 Dispatch custom event để notify các component khác
+            const event = new CustomEvent(STREAK_UPDATED, { 
+              detail: streakData 
+            })
+            window.dispatchEvent(event)
+            console.log('📡 STREAK_UPDATED event dispatched')
+          }
+        } catch (streakError) {
+          console.error('Error fetching streak:', streakError)
+        }
 
       } else {
         const errorText = await response.text()

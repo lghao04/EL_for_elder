@@ -70,7 +70,7 @@ export default function Dashboard() {
         </div>
 
         {/* Right Sidebar - Progress Stats */}
-        <RightSidebar difficulty={difficulty} setDifficulty={setDifficulty} />
+        <RightSidebar />
       </div>
     </div>
   )

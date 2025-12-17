@@ -1,10 +1,7 @@
-# app/services/progress_service.py
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 from bson import ObjectId
 from pymongo.database import Database
-from datetime import datetime, timedelta
-from typing import Dict
 
 
 class ProgressService:
@@ -13,23 +10,31 @@ class ProgressService:
     def __init__(self, db: Database):
         self.db = db
         self.collection = db["user_progress"]
+        self.learning_logs = db["learning_logs"]
         # Tạo index để tăng performance
         self._ensure_indexes()
     
     def _ensure_indexes(self):
         """Tạo các index cần thiết"""
         try:
-            # Index để tìm progress của user theo lesson
+            # Index cho user_progress
             self.collection.create_index(
                 [("user_id", 1), ("lesson_id", 1)], 
                 unique=True,
-                name="user_lesson_idx"  # Tên cụ thể
+                name="user_lesson_idx"
             )
-            # Index để lấy tất cả progress của user
             self.collection.create_index([("user_id", 1)], name="user_idx")
+            
+            # Index cho learning_logs (streak tracking)
+            self.learning_logs.create_index(
+                [("user_id", 1), ("date", 1)],
+                unique=True,
+                name="user_date_idx"
+            )
+            self.learning_logs.create_index([("user_id", 1)], name="logs_user_idx")
+            
             print("✅ Progress indexes created")
         except Exception as e:
-            # Ignore nếu index đã tồn tại
             if "already exists" in str(e).lower():
                 print("ℹ️ Indexes already exist")
             else:
@@ -42,8 +47,8 @@ class ProgressService:
         score: int,
         total_questions: int = 4
     ) -> Dict:
+        """Lưu progress và cập nhật learning log cho streak"""
         try:
-            # Tìm progress hiện tại
             existing_progress = self.collection.find_one({
                 "user_id": user_id,
                 "lesson_id": lesson_id
@@ -51,9 +56,10 @@ class ProgressService:
             
             now = datetime.now()
             today = now.date().isoformat()
-     
-             
-            self.db["learning_logs"].update_one(
+            
+            # 🔥 Cập nhật learning log (cho streak tracking)
+            # Chỉ tạo 1 log/ngày bất kể học bao nhiêu lesson
+            self.learning_logs.update_one(
                 {
                     "user_id": user_id,
                     "date": today
@@ -63,11 +69,16 @@ class ProgressService:
                         "user_id": user_id,
                         "date": today,
                         "created_at": now
+                    },
+                    "$inc": {
+                        "lessons_completed": 1  # Đếm số lesson học trong ngày
+                    },
+                    "$set": {
+                        "last_updated": now
                     }
                 },
                 upsert=True
             )
-
             
             if existing_progress:
                 # Cập nhật progress hiện tại
@@ -80,7 +91,7 @@ class ProgressService:
                         "total_attempts": 1
                     },
                     "$max": {
-                        "best_score": score  # Chỉ cập nhật nếu score mới cao hơn
+                        "best_score": score
                     }
                 }
                 
@@ -93,7 +104,6 @@ class ProgressService:
                     update_data
                 )
                 
-                # Lấy document đã cập nhật
                 updated_progress = self.collection.find_one({
                     "user_id": user_id,
                     "lesson_id": lesson_id
@@ -150,7 +160,7 @@ class ProgressService:
             raise
     
     def get_user_stats(self, user_id: str) -> Dict:
-        """Lấy thống kê tổng quan của user"""
+        """Lấy thống kê tổng quan của user (bao gồm streak)"""
         try:
             progress_list = self.get_all_user_progress(user_id)
             
@@ -164,15 +174,146 @@ class ProgressService:
             else:
                 avg_best_score = 0
             
+            # 🔥 Lấy streak info
+            streak_info = self.get_user_streak(user_id)
+            
             return {
                 "lessons_started": lessons_started,
                 "total_completed": total_completed,
                 "total_attempts": total_attempts,
-                "average_best_score": round(avg_best_score, 2)
+                "average_best_score": round(avg_best_score, 2),
+                "current_streak": streak_info["current_streak"],
+                "longest_streak": streak_info.get("longest_streak", 0),
+                "last_active_date": streak_info["last_active_date"]
             }
         
         except Exception as e:
             print(f"❌ Error getting user stats: {e}")
+            raise
+    
+    def get_user_streak(self, user_id: str) -> Dict:
+        """
+        Tính streak của user dựa trên learning logs
+        
+        Returns:
+            {
+                "current_streak": int,  # Số ngày streak hiện tại
+                "longest_streak": int,  # Streak dài nhất từng đạt được
+                "last_active_date": str,  # Ngày active gần nhất
+                "total_active_days": int  # Tổng số ngày đã học
+            }
+        """
+        try:
+            # Lấy tất cả learning logs, sắp xếp giảm dần theo ngày
+            logs = list(
+                self.learning_logs
+                .find({"user_id": user_id})
+                .sort("date", -1)  # -1 = descending
+            )
+            
+            if not logs:
+                return {
+                    "current_streak": 0,
+                    "longest_streak": 0,
+                    "last_active_date": None,
+                    "total_active_days": 0
+                }
+            
+            # Parse dates
+            dates = [
+                datetime.strptime(log["date"], "%Y-%m-%d").date()
+                for log in logs
+            ]
+            
+            # Dùng local date (không UTC)
+            today = datetime.now().date()
+            
+            # 🔥 Tính current streak
+            current_streak = 0
+            
+            # Kiểm tra xem có học hôm nay hoặc hôm qua không
+            if dates[0] == today or dates[0] == today - timedelta(days=1):
+                # Bắt đầu đếm streak
+                expected_date = dates[0]
+                
+                for date in dates:
+                    if date == expected_date:
+                        current_streak += 1
+                        expected_date = date - timedelta(days=1)
+                    elif date < expected_date:
+                        # Có gap trong streak
+                        break
+            
+            # 🔥 Tính longest streak
+            longest_streak = 0
+            temp_streak = 0
+            
+            if dates:
+                temp_streak = 1
+                longest_streak = 1
+                
+                for i in range(len(dates) - 1):
+                    diff = (dates[i] - dates[i + 1]).days
+                    
+                    if diff == 1:
+                        # Ngày liên tiếp
+                        temp_streak += 1
+                        longest_streak = max(longest_streak, temp_streak)
+                    else:
+                        # Có gap, reset temp_streak
+                        temp_streak = 1
+            
+            return {
+                "current_streak": current_streak,
+                "longest_streak": longest_streak,
+                "last_active_date": dates[0].isoformat(),
+                "total_active_days": len(dates)
+            }
+        
+        except Exception as e:
+            print(f"❌ Error calculating streak: {e}")
+            raise
+    
+    def get_learning_calendar(self, user_id: str, year: int, month: int) -> List[str]:
+        """
+        Lấy các ngày đã học trong tháng (dùng cho calendar UI)
+        
+        Args:
+            user_id: ID của user
+            year: Năm (VD: 2025)
+            month: Tháng (1-12)
+        
+        Returns:
+            List các ngày đã học trong tháng (format: "YYYY-MM-DD")
+        """
+        try:
+            # Tạo range cho tháng
+            start_date = f"{year}-{month:02d}-01"
+            
+            if month == 12:
+                end_year = year + 1
+                end_month = 1
+            else:
+                end_year = year
+                end_month = month + 1
+            
+            end_date = f"{end_year}-{end_month:02d}-01"
+            
+            # Query logs trong tháng
+            logs = list(
+                self.learning_logs.find({
+                    "user_id": user_id,
+                    "date": {
+                        "$gte": start_date,
+                        "$lt": end_date
+                    }
+                }).sort("date", 1)
+            )
+            
+            return [log["date"] for log in logs]
+        
+        except Exception as e:
+            print(f"❌ Error getting learning calendar: {e}")
             raise
     
     def delete_progress(self, user_id: str, lesson_id: str) -> bool:
@@ -193,7 +334,6 @@ class ProgressService:
         if not progress:
             return None
         
-        # Convert datetime to string (ISO format)
         created_at = progress.get("created_at")
         updated_at = progress.get("updated_at")
         
@@ -207,39 +347,4 @@ class ProgressService:
             "best_score": progress.get("best_score", 0),
             "created_at": created_at.isoformat() if created_at else None,
             "updated_at": updated_at.isoformat() if updated_at else None
-        }
-    
-
- 
-    def get_user_streak(self, user_id: str) -> Dict:
-        logs = list(
-            self.db["learning_logs"]
-            .find({"user_id": user_id})
-            .sort("date", -1)
-        )
-
-        if not logs:
-            return {
-                "current_streak": 0,
-                "last_active_date": None
-            }
-
-        dates = [
-            datetime.strptime(log["date"], "%Y-%m-%d").date()
-            for log in logs
-        ]
-
-        # ❗ DÙNG LOCAL DATE (KHÔNG UTC)
-        today = datetime.now().date()
-
-        streak = 0
-        for i, d in enumerate(dates):
-            if d == today - timedelta(days=i):
-                streak += 1
-            else:
-                break
-
-        return {
-            "current_streak": streak,
-            "last_active_date": dates[0].isoformat()
         }
