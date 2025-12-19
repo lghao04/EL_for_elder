@@ -44,22 +44,19 @@ app.mount(
     StaticFiles(directory=str(TEMP_TTS_DIR)),
     name="temp_tts",
 )
-
-# Include routers
 from app.api.auth_api import router as auth_router
 from app.api.voice_chat import router as voice_router
 from app.api.stt import router as stt_router
 from app.api.lesson import router as lessons_router
-from app.api.progress import router as progress_router  # 🆕 NEW
+from app.api.progress import router as progress_router  
 
-# Auth routes FIRST (for login/register at root)
 app.include_router(auth_router, prefix="/api", tags=["Authentication"])
 app.include_router(lessons_router, prefix="/api", tags=["Lessons"])
 app.include_router(progress_router, prefix="/api", tags=["Progress"])
 app.include_router(voice_router, prefix="/api", tags=["Voice Chat"])
 app.include_router(stt_router, prefix="/api", tags=["Speech-to-Text"])
 
-# Root endpoint
+
 @app.get("/")
 def root():
     return {
