@@ -275,7 +275,7 @@ export default function AITutor({ language }: AITutorProps) {
     <div className="fixed inset-0 bg-black bg-opacity-30 flex items-end sm:items-center justify-center p-4 z-50">
       <div className="bg-white rounded-4xl shadow-2xl w-full sm:max-w-2xl max-h-[90vh] sm:max-h-[600px] flex flex-col border-4 border-purple-300 overflow-hidden">
 
-        {/* Header */}
+      
         <div className="bg-gradient-to-r from-purple-400 to-pink-400 px-6 py-4 sm:p-6 flex justify-between items-center gap-4">
           <h2 className="text-2xl sm:text-4xl font-bold text-white flex items-center gap-2 sm:gap-4">
             🐰 {language === "en" ? "AI Tutor" : "Trợ lý AI"}

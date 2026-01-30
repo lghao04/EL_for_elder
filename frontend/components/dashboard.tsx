@@ -2,11 +2,9 @@
 
 interface HeaderProps {
   userAvatar: string
-  onLanguageChange: (lang: string) => void
-  currentLanguage: string
 }
 
-export default function Header({ userAvatar, onLanguageChange, currentLanguage }: HeaderProps) {
+export default function Header({ userAvatar }: HeaderProps) {
   return (
     <header className="bg-gradient-to-r from-blue-400 to-purple-400 shadow-lg px-8 py-4">
       <div className="flex items-center justify-between max-w-7xl mx-auto">
@@ -21,12 +19,6 @@ export default function Header({ userAvatar, onLanguageChange, currentLanguage }
 
         {/* Right section: Language and Avatar */}
         <div className="flex items-center gap-6">
-          <button
-            onClick={() => onLanguageChange(currentLanguage === "en" ? "vi" : "en")}
-            className="bg-white text-blue-600 px-6 py-3 rounded-full font-bold text-lg hover:bg-blue-50 transition shadow-md"
-          >
-            {currentLanguage === "en" ? "🇻🇳 Tiếng Việt" : "🇬🇧 English"}
-          </button>
           <button className="bg-yellow-300 rounded-full p-4 text-4xl hover:bg-yellow-200 transition shadow-md">
             {userAvatar}
           </button>
