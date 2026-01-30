@@ -3,7 +3,7 @@ uvicorn[standard]>=0.20.0
 requests
 beautifulsoup4
 pymongo
-pydantic
+pydantic[email]
 python-dotenv
 openai
 python-jose[cryptography]
