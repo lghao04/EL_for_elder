@@ -11,3 +11,9 @@ passlib[bcrypt]
 python-multipart
 lxml
 soupsieve
+gTTS
+PyJWT
+pydantic_core
+deepgram-sdk>=6.0.0
+websockets
+google-auth
