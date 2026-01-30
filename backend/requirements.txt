@@ -17,3 +17,4 @@ pydantic_core
 deepgram-sdk
 websockets
 google-auth
+groq
