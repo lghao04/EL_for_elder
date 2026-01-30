@@ -24,7 +24,7 @@ export default function RightSidebar() {
 
     try {
       const res = await fetch(
-        "http://localhost:8000/api/progress/streak",
+        `${process.env.NEXT_PUBLIC_API_URL}/progress/streak`,
         {
           headers: {
             Authorization: `Bearer ${token}`,

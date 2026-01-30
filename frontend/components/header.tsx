@@ -46,7 +46,7 @@ export default function Header({ userAvatar }: HeaderProps) {
         <div className="flex items-center gap-3">
           <div className="bg-blue-600 text-white rounded-lg px-3 py-2 font-bold text-lg">SF</div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">SpeakFlow</h1>
+            <h1 className="text-2xl font-bold text-gray-900">ZerotoOne</h1>
             <p className="text-sm text-gray-500">Master English Today</p>
           </div>
         </div>

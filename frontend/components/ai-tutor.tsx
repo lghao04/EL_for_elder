@@ -3,6 +3,9 @@
 import { useState, useRef, useEffect } from "react"
 import { convertWebMToWav } from "../utils/convertspeech"
 
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+
 interface AITutorProps {
   language: string
 }
@@ -80,7 +83,7 @@ export default function AITutor({ language }: AITutorProps) {
           form.append("audio", wavBlob, "audio.wav")
           form.append("language", language)
 
-          const res = await fetch("http://127.0.0.1:8000/api/speech-to-text", {
+          const res = await fetch(`${API_BASE_URL}/speech-to-text`, {
             method: "POST",
             body: form
           })
@@ -195,8 +198,7 @@ export default function AITutor({ language }: AITutorProps) {
     }
   }
 
-  // --- handle send message: request LLM, then TTS, use playAudioUrl ---
-  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
+  
 
   const handleSendMessage = async () => {
     const messageToSend = transcript.trim();
@@ -207,7 +209,7 @@ export default function AITutor({ language }: AITutorProps) {
 
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/voice-chat`, {
+      const res = await fetch(`${API_BASE_URL}/api/voice-chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: messageToSend, language })
@@ -223,7 +225,7 @@ export default function AITutor({ language }: AITutorProps) {
       if (data.audioUrl) {
         const audioUrl = data.audioUrl.startsWith("http")
           ? data.audioUrl
-          : `${API_BASE}${data.audioUrl.startsWith('/') ? '' : '/'}${data.audioUrl}`;
+          : `${API_BASE_URL}${data.audioUrl.startsWith('/') ? '' : '/'}${data.audioUrl}`;
 
         // play audio and animate mic -> speaker
         await playAudioUrl(audioUrl);

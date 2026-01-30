@@ -14,7 +14,7 @@ export default function Header({ userAvatar, onLanguageChange, currentLanguage }
         <div className="flex items-center gap-4">
           <div className="text-5xl">🎤</div>
           <div>
-            <h1 className="text-4xl font-bold text-white">SpeakFlow</h1>
+            <h1 className="text-4xl font-bold text-white">ZerotoOne</h1>
             <p className="text-lg text-blue-50">Learn English Together</p>
           </div>
         </div>

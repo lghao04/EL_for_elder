@@ -30,7 +30,7 @@ export default function AIChat() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
 
-  const API_BASE = "http://127.0.0.1:8000"
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -168,7 +168,7 @@ export default function AIChat() {
           form.append("audio", wavBlob, "audio.wav")
           form.append("language", language)
 
-          const res = await fetch(`${API_BASE}/api/speech-to-text`, {
+          const res = await fetch(`${API_BASE_URL}/api/speech-to-text`, {
             method: "POST",
             body: form
           })
@@ -197,7 +197,7 @@ export default function AIChat() {
           setMessages((prev) => [...prev, userMessage])
 
           // 4) Now call voice-chat API sequentially (after STT result is displayed)
-          const vcRes = await fetch(`${API_BASE}/api/voice-chat`, {
+          const vcRes = await fetch(`${API_BASE_URL}/api/voice-chat`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -232,7 +232,7 @@ export default function AIChat() {
           if (vcData.audioUrl) {
             const audioUrl = vcData.audioUrl.startsWith("http")
               ? vcData.audioUrl
-              : `${API_BASE}${vcData.audioUrl.startsWith('/') ? '' : '/'}${vcData.audioUrl}`
+              : `${API_BASE_URL}${vcData.audioUrl.startsWith('/') ? '' : '/'}${vcData.audioUrl}`
 
             await playAudioUrl(audioUrl)
           }

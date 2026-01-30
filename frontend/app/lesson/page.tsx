@@ -3,7 +3,7 @@
 import { useSearchParams, useRouter } from "next/navigation"
 import Header from "../../components/header"
 import { useState, useEffect, useRef } from "react"
-
+ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 // Định nghĩa kiểu dữ liệu cho Question
 interface Question {
   type: string;
@@ -53,7 +53,7 @@ export default function LessonPage() {
         setAudioLoading(true)
         
         const response = await fetch(
-          `http://localhost:8000/api/lessons/${lessonId}`
+          `${API_BASE_URL}/lessons/${lessonId}`
         )
         
         if (!response.ok) {
@@ -117,7 +117,7 @@ export default function LessonPage() {
 
       console.log('💾 Saving progress to backend:', { lessonId, score })
 
-      const response = await fetch('http://localhost:8000/api/progress', {
+      const response = await fetch(`${API_BASE_URL}/progress`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -4,6 +4,9 @@ import Link from "next/link"
 import { STREAK_UPDATED } from "../../constants/events"
 
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+
+
 interface Lesson {
   id: string
 }
@@ -21,71 +24,71 @@ interface ProgressMap {
 }
 
 // Score Popup Component
-function ScorePopup({ score, totalQuestions, onClose }: { score: number; totalQuestions: number; onClose: () => void }) {
-  useEffect(() => {
-    const handleKeyPress = (e: KeyboardEvent) => {
-      if (e.key === 'Enter') {
-        onClose()
-      }
-    }
+// function ScorePopup({ score, totalQuestions, onClose }: { score: number; totalQuestions: number; onClose: () => void }) {
+//   useEffect(() => {
+//     const handleKeyPress = (e: KeyboardEvent) => {
+//       if (e.key === 'Enter') {
+//         onClose()
+//       }
+//     }
 
-    window.addEventListener('keydown', handleKeyPress)
-    return () => window.removeEventListener('keydown', handleKeyPress)
-  }, [onClose])
+//     window.addEventListener('keydown', handleKeyPress)
+//     return () => window.removeEventListener('keydown', handleKeyPress)
+//   }, [onClose])
 
-  const percentage = (score / totalQuestions) * 100
-  const isPerfect = score === totalQuestions
-  const isGood = percentage >= 75
-  const isOkay = percentage >= 50
+//   const percentage = (score / totalQuestions) * 100
+//   const isPerfect = score === totalQuestions
+//   const isGood = percentage >= 75
+//   const isOkay = percentage >= 50
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fadeIn">
-      <div className="bg-white rounded-3xl p-8 max-w-md w-full mx-4 shadow-2xl transform animate-scaleIn">
-        {/* Emoji and Title */}
-        <div className="text-center mb-6">
-          <div className="text-6xl mb-4">
-            {isPerfect ? '🎉' : isGood ? '😊' : isOkay ? '👍' : '💪'}
-          </div>
-          <h2 className="text-3xl font-bold text-gray-800 mb-2">
-            {isPerfect ? 'Perfect!' : isGood ? 'Great Job!' : isOkay ? 'Good Effort!' : 'Keep Practicing!'}
-          </h2>
-        </div>
+//   return (
+//     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fadeIn">
+//       <div className="bg-white rounded-3xl p-8 max-w-md w-full mx-4 shadow-2xl transform animate-scaleIn">
+//         {/* Emoji and Title */}
+//         <div className="text-center mb-6">
+//           <div className="text-6xl mb-4">
+//             {isPerfect ? '🎉' : isGood ? '😊' : isOkay ? '👍' : '💪'}
+//           </div>
+//           <h2 className="text-3xl font-bold text-gray-800 mb-2">
+//             {isPerfect ? 'Perfect!' : isGood ? 'Great Job!' : isOkay ? 'Good Effort!' : 'Keep Practicing!'}
+//           </h2>
+//         </div>
 
-        {/* Score Display */}
-        <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-6 mb-6 border-2 border-blue-200">
-          <div className="text-center">
-            <p className="text-gray-600 mb-2">Your Score</p>
-            <p className="text-5xl font-bold text-blue-600 mb-2">
-              {score}/{totalQuestions}
-            </p>
-            <p className="text-2xl font-semibold text-purple-600">
-              {percentage.toFixed(0)}%
-            </p>
-          </div>
-        </div>
+//         {/* Score Display */}
+//         <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-6 mb-6 border-2 border-blue-200">
+//           <div className="text-center">
+//             <p className="text-gray-600 mb-2">Your Score</p>
+//             <p className="text-5xl font-bold text-blue-600 mb-2">
+//               {score}/{totalQuestions}
+//             </p>
+//             <p className="text-2xl font-semibold text-purple-600">
+//               {percentage.toFixed(0)}%
+//             </p>
+//           </div>
+//         </div>
 
-        {/* Message */}
-        <p className="text-center text-gray-600 mb-6">
-          {isPerfect 
-            ? 'Excellent! You got all questions correct! 🌟' 
-            : isGood 
-            ? 'Well done! Keep up the good work! 💫'
-            : isOkay
-            ? 'Nice try! Practice makes perfect! ✨'
-            : 'Don\'t give up! You\'ll do better next time! 🚀'}
-        </p>
+//         {/* Message */}
+//         <p className="text-center text-gray-600 mb-6">
+//           {isPerfect 
+//             ? 'Excellent! You got all questions correct! 🌟' 
+//             : isGood 
+//             ? 'Well done! Keep up the good work! 💫'
+//             : isOkay
+//             ? 'Nice try! Practice makes perfect! ✨'
+//             : 'Don\'t give up! You\'ll do better next time! 🚀'}
+//         </p>
 
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          className="w-full bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white font-bold py-4 px-6 rounded-xl transition transform hover:scale-105 shadow-lg"
-        >
-          Continue (Press Enter)
-        </button>
-      </div>
-    </div>
-  )
-}
+//         {/* Close Button */}
+//         <button
+//           onClick={onClose}
+//           className="w-full bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white font-bold py-4 px-6 rounded-xl transition transform hover:scale-105 shadow-lg"
+//         >
+//           Continue (Press Enter)
+//         </button>
+//       </div>
+//     </div>
+//   )
+// }
 
 export default function ListenTab() {
   const [lessons, setLessons] = useState<Lesson[]>([])
@@ -106,7 +109,7 @@ export default function ListenTab() {
   useEffect(() => {
     const fetchLessons = async () => {
       try {
-        const res = await fetch("http://localhost:8000/api/lessons")
+        const res = await fetch(`${API_BASE_URL}/lessons`)
 
         if (!res.ok) {
           throw new Error("Không thể tải danh sách lesson")
@@ -138,7 +141,7 @@ export default function ListenTab() {
         return
       }
 
-      const response = await fetch('http://localhost:8000/api/progress/all', {
+      const response = await fetch(`${API_BASE_URL}/progress/all`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -204,7 +207,7 @@ export default function ListenTab() {
 
       console.log('💾 Saving progress:', { lessonId, score })
 
-      const response = await fetch('http://localhost:8000/api/progress', {
+      const response = await fetch(`${API_BASE_URL}/progress`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -225,7 +228,7 @@ export default function ListenTab() {
         
         // 🔥 Fetch streak data và dispatch event
         try {
-          const streakResponse = await fetch("http://localhost:8000/api/progress/streak", {
+          const streakResponse = await fetch(`${API_BASE_URL}/progress/streak`, {
             headers: { Authorization: `Bearer ${token}` }
           })
           
@@ -294,13 +297,13 @@ export default function ListenTab() {
   return (
     <div className="space-y-4">
       {/* Score Popup */}
-      {showScorePopup && (
+      {/* {showScorePopup && (
         <ScorePopup
           score={currentScore.score}
           totalQuestions={currentScore.total}
           onClose={() => setShowScorePopup(false)}
         />
-      )}
+      )} */}
 
       <div className="space-y-3">
         {lessons.map((lesson, index) => {
