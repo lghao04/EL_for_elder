@@ -1,10 +1,9 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { convertWebMToWav } from "../utils/convertspeech"
 
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_BASE_URL =  "http://localhost:8000"
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws/chat"
 
 interface AITutorProps {
   language: string
@@ -16,16 +15,152 @@ export default function AITutor({ language }: AITutorProps) {
   const [showTranscript, setShowTranscript] = useState(false)
   const [loading, setLoading] = useState(false)
   const [recording, setRecording] = useState(false)
-  const [isPlaying, setIsPlaying] = useState(false) // new: audio playback state
+  const [isPlaying, setIsPlaying] = useState(false)
+  
+  
+  const [isConnected, setIsConnected] = useState(false)
+  const wsRef = useRef<WebSocket | null>(null)
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const userId = useRef(`user-${Date.now()}`).current
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const streamRef = useRef<MediaStream | null>(null)
-  const audioRef = useRef<HTMLAudioElement | null>(null) // ref for audio playback
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  // --- Recording functions ---
+ //socket
+  useEffect(() => {
+    if (isOpen) {
+      connectWebSocket()
+    }
+
+    return () => {
+      disconnectWebSocket()
+    }
+  }, [isOpen])
+
+  const connectWebSocket = () => {
+    try {
+      const ws = new WebSocket(`${WS_URL}/${userId}`)
+
+      ws.onopen = () => {
+        console.log("✅ WebSocket connected")
+        setIsConnected(true)
+      }
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data)
+          handleWebSocketMessage(data)
+        } catch (err) {
+          console.error("Failed to parse WS message:", err)
+        }
+      }
+
+      ws.onerror = (error) => {
+        console.error("❌ WebSocket error:", error)
+      }
+
+      ws.onclose = () => {
+        console.log("WebSocket disconnected")
+        setIsConnected(false)
+        
+        // Auto reconnect
+        if (isOpen) {
+          reconnectTimeoutRef.current = setTimeout(() => {
+            console.log("Attempting to reconnect...")
+            connectWebSocket()
+          }, 3000)
+        }
+      }
+
+      wsRef.current = ws
+    } catch (err) {
+      console.error("Failed to create WebSocket:", err)
+    }
+  }
+
+  const disconnectWebSocket = () => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current)
+    }
+    
+    if (wsRef.current) {
+      wsRef.current.close()
+      wsRef.current = null
+    }
+    
+    setIsConnected(false)
+  }
+
+  const handleWebSocketMessage = (data: any) => {
+    console.log("📨 Received:", data.type)
+
+    switch (data.type) {
+      case "connected":
+        console.log("Connected with ID:", data.connection_id)
+        break
+
+      case "audio_started":
+        console.log("Server ready to receive audio")
+        break
+
+      case "audio_progress":
+        console.log(`Audio: ${data.bytes_received} bytes`)
+        break
+
+      case "transcribing":
+        setLoading(true)
+        break
+
+      case "transcript_complete":
+        // Update transcript
+        setTranscript(data.text || "")
+        setShowTranscript(Boolean(data.text))
+        setLoading(false)
+        
+        if (!data.text) {
+          alert(language === "en"
+            ? "No speech detected. Please try again."
+            : "Không phát hiện giọng nói. Vui lòng thử lại.")
+        }
+        break
+
+      case "llm_response_start":
+        // LLM bắt đầu generate response
+        console.log("LLM generating response...")
+        break
+
+      case "llm_chunk":
+        // Stream LLM response (nếu backend support)
+        console.log("LLM chunk:", data.content)
+        break
+
+      case "audio_url":
+        // Nhận audio URL từ TTS
+        if (data.url) {
+          const audioUrl = data.url.startsWith("http")
+            ? data.url
+            : `${API_BASE_URL}${data.url.startsWith('/') ? '' : '/'}${data.url}`
+          
+          playAudioUrl(audioUrl)
+        }
+        break
+
+      case "error":
+        console.error("Server error:", data.message)
+        alert(`${language === "en" ? "Error" : "Lỗi"}: ${data.message}`)
+        setLoading(false)
+        break
+
+      default:
+        console.log("Unknown message type:", data.type)
+    }
+  }
+
+  // ============= RECORDING FUNCTIONS =============
   const startRecording = async () => {
-    // if audio is playing, stop it before recording
+    // Stop audio if playing
     if (audioRef.current && !audioRef.current.paused) {
       try {
         audioRef.current.pause()
@@ -33,7 +168,6 @@ export default function AITutor({ language }: AITutorProps) {
       setIsPlaying(false)
     }
 
-    // hide previous transcript & send button while recording
     setShowTranscript(false)
 
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -59,64 +193,120 @@ export default function AITutor({ language }: AITutorProps) {
         ? 'audio/webm'
         : 'audio/mp4'
 
-      const mr = new MediaRecorder(stream, { mimeType })
+      const mr = new MediaRecorder(stream, { 
+        mimeType,
+        audioBitsPerSecond: 128000 
+      })
       mediaRecorderRef.current = mr
       chunksRef.current = []
 
-      mr.ondataavailable = (e: BlobEvent) => {
-        if (e.data?.size > 0) {
-          chunksRef.current.push(e.data)
+      // ===== WEBSOCKET MODE: Stream chunks =====
+      if (isConnected && wsRef.current) {
+        console.log("🎙️ Using WebSocket streaming mode")
+        
+        // Send audio_start signal
+        wsRef.current.send(JSON.stringify({
+          type: "audio_start",
+          format: mimeType.split('/')[1],
+          sample_rate: 16000,
+          language: language
+        }))
+
+        mr.ondataavailable = (e: BlobEvent) => {
+          if (e.data?.size > 0) {
+            chunksRef.current.push(e.data)
+            
+            // Convert to base64 and send via WebSocket
+            const reader = new FileReader()
+            reader.onloadend = () => {
+              const base64Data = (reader.result as string).split(',')[1]
+              
+              if (wsRef.current && isConnected) {
+                wsRef.current.send(JSON.stringify({
+                  type: "audio_chunk",
+                  data: base64Data
+                }))
+              }
+            }
+            reader.readAsDataURL(e.data)
+          }
         }
-      }
 
-      mr.onstop = async () => {
-        const audioBlob = new Blob(chunksRef.current, { type: mimeType })
-
-        try {
-          setLoading(true)
-
-          // Convert to WAV
-          const wavBlob = await convertWebMToWav(audioBlob)
-
-          // Send to STT backend
-          const form = new FormData()
-          form.append("audio", wavBlob, "audio.wav")
-          form.append("language", language)
-
-          const res = await fetch(`${API_BASE_URL}/speech-to-text`, {
-            method: "POST",
-            body: form
-          })
-
-          if (!res.ok) {
-            const errorText = await res.text().catch(() => "Unknown error")
-            throw new Error(`Server error ${res.status}: ${errorText}`)
+        mr.onstop = () => {
+          // Send audio_end signal
+          if (wsRef.current && isConnected) {
+            wsRef.current.send(JSON.stringify({
+              type: "audio_end"
+            }))
           }
 
-          const data = await res.json()
-
-          // update transcript and only show it after recording stopped and STT finished
-          setTranscript(data.text || "")
-          setShowTranscript(Boolean(data.text))
-
-          if (!data.text) {
-            alert(language === "en"
-              ? "No speech detected. Please try again."
-              : "Không phát hiện giọng nói. Vui lòng thử lại.")
-          }
-
-        } catch (err) {
-          console.error("STT error:", err)
-          alert(`${language === "en" ? "Error" : "Lỗi"}: ${
-            err instanceof Error ? err.message : 'Unknown error'
-          }`)
-        } finally {
-          setLoading(false)
+          // Stop stream
           if (streamRef.current) {
             streamRef.current.getTracks().forEach(track => track.stop())
             streamRef.current = null
           }
         }
+
+        // Start with 250ms chunks for streaming
+        mr.start(250)
+      } 
+      // ===== FALLBACK: Old HTTP POST mode =====
+      else {
+        console.log("📡 Using HTTP POST fallback mode (WebSocket not connected)")
+        
+        mr.ondataavailable = (e: BlobEvent) => {
+          if (e.data?.size > 0) {
+            chunksRef.current.push(e.data)
+          }
+        }
+
+        mr.onstop = async () => {
+          const audioBlob = new Blob(chunksRef.current, { type: mimeType })
+
+          try {
+            setLoading(true)
+
+            // Old HTTP POST method (your original working code)
+            const form = new FormData()
+            form.append("audio", audioBlob, "audio.webm")
+            form.append("language", language)
+
+            const res = await fetch(`${API_BASE_URL}/api/speech-to-text`, {
+              method: "POST",
+              body: form
+            })
+
+            if (!res.ok) {
+              const errorText = await res.text().catch(() => "Unknown error")
+              throw new Error(`Server error ${res.status}: ${errorText}`)
+            }
+
+            const data = await res.json()
+
+            setTranscript(data.text || "")
+            setShowTranscript(Boolean(data.text))
+
+            if (!data.text) {
+              alert(language === "en"
+                ? "No speech detected. Please try again."
+                : "Không phát hiện giọng nói. Vui lòng thử lại.")
+            }
+
+          } catch (err) {
+            console.error("STT error:", err)
+            alert(`${language === "en" ? "Error" : "Lỗi"}: ${
+              err instanceof Error ? err.message : 'Unknown error'
+            }`)
+          } finally {
+            setLoading(false)
+            if (streamRef.current) {
+              streamRef.current.getTracks().forEach(track => track.stop())
+              streamRef.current = null
+            }
+          }
+        }
+
+        mr.start()
       }
 
       mr.onerror = (event: Event) => {
@@ -125,7 +315,6 @@ export default function AITutor({ language }: AITutorProps) {
         setRecording(false)
       }
 
-      mr.start()
       setRecording(true)
 
     } catch (err) {
@@ -143,9 +332,8 @@ export default function AITutor({ language }: AITutorProps) {
     setRecording(false)
   }
 
-  // --- Playback helper: play audio URL and manage UI state ---
+  // ============= PLAYBACK FUNCTIONS =============
   const playAudioUrl = async (audioUrl: string) => {
-    // stop previous audio if any
     if (audioRef.current) {
       try {
         audioRef.current.pause()
@@ -158,11 +346,9 @@ export default function AITutor({ language }: AITutorProps) {
     audio.crossOrigin = "anonymous"
     audioRef.current = audio
 
-    // listeners
     const onPlay = () => setIsPlaying(true)
     const onEnd = () => {
       setIsPlaying(false)
-      // cleanup listeners
       audio.removeEventListener("playing", onPlay)
       audio.removeEventListener("ended", onEnd)
       audio.removeEventListener("error", onError)
@@ -181,7 +367,6 @@ export default function AITutor({ language }: AITutorProps) {
 
     try {
       await audio.play()
-      // isPlaying will be set by 'playing' event; but ensure state if event not fired
       setIsPlaying(true)
     } catch (err) {
       console.error("play() failed:", err)
@@ -198,52 +383,69 @@ export default function AITutor({ language }: AITutorProps) {
     }
   }
 
-  
-
+  // ============= SEND MESSAGE =============
   const handleSendMessage = async () => {
-    const messageToSend = transcript.trim();
+    const messageToSend = transcript.trim()
     if (!messageToSend) {
-      alert(language === "en" ? "Please enter a message" : "Vui lòng nhập tin nhắn");
-      return;
+      alert(language === "en" ? "Please enter a message" : "Vui lòng nhập tin nhắn")
+      return
     }
 
-    setLoading(true);
+    setLoading(true)
+    
     try {
-      const res = await fetch(`${API_BASE_URL}/api/voice-chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: messageToSend, language })
-      });
+      // ===== WEBSOCKET MODE =====
+      if (isConnected && wsRef.current) {
+        console.log("📤 Sending via WebSocket")
+        
+        wsRef.current.send(JSON.stringify({
+          type: "text",
+          content: messageToSend,
+          language: language
+        }))
+        
+        // Reset transcript
+        setTranscript("")
+        setShowTranscript(false)
+      } 
+      // ===== FALLBACK: HTTP POST =====
+      else {
+        console.log("📤 Sending via HTTP POST")
+        
+        const res = await fetch(`${API_BASE_URL}/api/voice-chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: messageToSend, language })
+        })
 
-      if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        throw new Error(`Server returned ${res.status}: ${txt}`);
+        if (!res.ok) {
+          const txt = await res.text().catch(() => "")
+          throw new Error(`Server returned ${res.status}: ${txt}`)
+        }
+
+        const data = await res.json()
+
+        if (data.audioUrl) {
+          const audioUrl = data.audioUrl.startsWith("http")
+            ? data.audioUrl
+            : `${API_BASE_URL}${data.audioUrl.startsWith('/') ? '' : '/'}${data.audioUrl}`
+
+          await playAudioUrl(audioUrl)
+        }
+
+        setTranscript("")
+        setShowTranscript(false)
       }
-
-      const data = await res.json();
-
-      if (data.audioUrl) {
-        const audioUrl = data.audioUrl.startsWith("http")
-          ? data.audioUrl
-          : `${API_BASE_URL}${data.audioUrl.startsWith('/') ? '' : '/'}${data.audioUrl}`;
-
-        // play audio and animate mic -> speaker
-        await playAudioUrl(audioUrl);
-      }
-
-      // Reset transcript editor only after sending (we hide it earlier when recording)
-      setTranscript("");
-      setShowTranscript(false);
 
     } catch (err) {
-      console.error("Voice chat error:", err);
-      alert(`${language === "en" ? "Error" : "Lỗi"}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      console.error("Voice chat error:", err)
+      alert(`${language === "en" ? "Error" : "Lỗi"}: ${err instanceof Error ? err.message : 'Unknown error'}`)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
-  // Cleanup audio and recorder on unmount
+  // Cleanup
   useEffect(() => {
     return () => {
       if (streamRef.current) {
@@ -259,7 +461,7 @@ export default function AITutor({ language }: AITutorProps) {
     }
   }, [])
 
-  // UI rendering
+  // ============= UI RENDERING =============
   if (!isOpen) {
     return (
       <button
@@ -275,11 +477,20 @@ export default function AITutor({ language }: AITutorProps) {
     <div className="fixed inset-0 bg-black bg-opacity-30 flex items-end sm:items-center justify-center p-4 z-50">
       <div className="bg-white rounded-4xl shadow-2xl w-full sm:max-w-2xl max-h-[90vh] sm:max-h-[600px] flex flex-col border-4 border-purple-300 overflow-hidden">
 
-      
+        {/* Header */}
         <div className="bg-gradient-to-r from-purple-400 to-pink-400 px-6 py-4 sm:p-6 flex justify-between items-center gap-4">
-          <h2 className="text-2xl sm:text-4xl font-bold text-white flex items-center gap-2 sm:gap-4">
-            🐰 {language === "en" ? "AI Tutor" : "Trợ lý AI"}
-          </h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-2xl sm:text-4xl font-bold text-white flex items-center gap-2 sm:gap-4">
+              🐰 {language === "en" ? "AI Tutor" : "Trợ lý AI"}
+            </h2>
+            {/* WebSocket status indicator */}
+            <div
+              className={`w-3 h-3 rounded-full ${
+                isConnected ? "bg-green-400" : "bg-yellow-400"
+              } ${isConnected ? "animate-pulse" : ""}`}
+              title={isConnected ? "WebSocket connected (fast mode)" : "HTTP mode (slower)"}
+            />
+          </div>
           <button
             onClick={() => {
               setIsOpen(false)
@@ -304,7 +515,6 @@ export default function AITutor({ language }: AITutorProps) {
           {/* Recording / Play Button */}
           <button
             onClick={() => {
-              // If currently playing audio, pressing button will stop audio and revert
               if (isPlaying) {
                 stopAudioIfPlaying()
                 return
@@ -322,11 +532,6 @@ export default function AITutor({ language }: AITutorProps) {
               ${isPlaying ? "bg-yellow-400 text-white shadow-2xl" : ""} 
               ${isPlaying ? "animate-[pulse_1s_ease-in-out_infinite] scale-125" : ""}`}
           >
-            {/* Icon logic:
-                - recording -> stop icon
-                - playing -> speaker icon
-                - idle -> microphone icon
-            */}
             {recording ? "⏹️" : isPlaying ? "🔊" : "🎤"}
           </button>
 
@@ -342,7 +547,16 @@ export default function AITutor({ language }: AITutorProps) {
             }
           </p>
 
-          {/* Transcript Editor (hidden while recording) */}
+          {/* Connection mode indicator */}
+          {!loading && !recording && !isPlaying && (
+            <p className="text-sm text-gray-500">
+              {isConnected 
+                ? "🚀 WebSocket mode (faster)" 
+                : "📡 HTTP mode (slower)"}
+            </p>
+          )}
+
+          {/* Transcript Editor */}
           {showTranscript && (
             <div className="w-full space-y-4 animate-in fade-in duration-300">
               <textarea
@@ -358,7 +572,7 @@ export default function AITutor({ language }: AITutorProps) {
                 autoFocus
               />
 
-              {/* Action Buttons: only visible when transcript is shown */}
+              {/* Action Buttons */}
               <div className="flex gap-3">
                 <button
                   onClick={handleSendMessage}

@@ -4,7 +4,7 @@ import Link from "next/link"
 import { STREAK_UPDATED } from "../../constants/events"
 
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ||  "http://localhost:8000/api";
 
 
 interface Lesson {
@@ -22,73 +22,6 @@ interface Progress {
 interface ProgressMap {
   [lessonId: string]: Progress
 }
-
-// Score Popup Component
-// function ScorePopup({ score, totalQuestions, onClose }: { score: number; totalQuestions: number; onClose: () => void }) {
-//   useEffect(() => {
-//     const handleKeyPress = (e: KeyboardEvent) => {
-//       if (e.key === 'Enter') {
-//         onClose()
-//       }
-//     }
-
-//     window.addEventListener('keydown', handleKeyPress)
-//     return () => window.removeEventListener('keydown', handleKeyPress)
-//   }, [onClose])
-
-//   const percentage = (score / totalQuestions) * 100
-//   const isPerfect = score === totalQuestions
-//   const isGood = percentage >= 75
-//   const isOkay = percentage >= 50
-
-//   return (
-//     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fadeIn">
-//       <div className="bg-white rounded-3xl p-8 max-w-md w-full mx-4 shadow-2xl transform animate-scaleIn">
-//         {/* Emoji and Title */}
-//         <div className="text-center mb-6">
-//           <div className="text-6xl mb-4">
-//             {isPerfect ? '🎉' : isGood ? '😊' : isOkay ? '👍' : '💪'}
-//           </div>
-//           <h2 className="text-3xl font-bold text-gray-800 mb-2">
-//             {isPerfect ? 'Perfect!' : isGood ? 'Great Job!' : isOkay ? 'Good Effort!' : 'Keep Practicing!'}
-//           </h2>
-//         </div>
-
-//         {/* Score Display */}
-//         <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-6 mb-6 border-2 border-blue-200">
-//           <div className="text-center">
-//             <p className="text-gray-600 mb-2">Your Score</p>
-//             <p className="text-5xl font-bold text-blue-600 mb-2">
-//               {score}/{totalQuestions}
-//             </p>
-//             <p className="text-2xl font-semibold text-purple-600">
-//               {percentage.toFixed(0)}%
-//             </p>
-//           </div>
-//         </div>
-
-//         {/* Message */}
-//         <p className="text-center text-gray-600 mb-6">
-//           {isPerfect 
-//             ? 'Excellent! You got all questions correct! 🌟' 
-//             : isGood 
-//             ? 'Well done! Keep up the good work! 💫'
-//             : isOkay
-//             ? 'Nice try! Practice makes perfect! ✨'
-//             : 'Don\'t give up! You\'ll do better next time! 🚀'}
-//         </p>
-
-//         {/* Close Button */}
-//         <button
-//           onClick={onClose}
-//           className="w-full bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white font-bold py-4 px-6 rounded-xl transition transform hover:scale-105 shadow-lg"
-//         >
-//           Continue (Press Enter)
-//         </button>
-//       </div>
-//     </div>
-//   )
-// }
 
 export default function ListenTab() {
   const [lessons, setLessons] = useState<Lesson[]>([])
@@ -221,7 +154,7 @@ export default function ListenTab() {
 
       if (response.ok) {
         const data = await response.json()
-        console.log('✅ Progress saved successfully:', data)
+        console.log('Progress saved successfully:', data)
         
         // Refresh progress data
         await fetchProgress()
@@ -296,15 +229,6 @@ export default function ListenTab() {
 
   return (
     <div className="space-y-4">
-      {/* Score Popup */}
-      {/* {showScorePopup && (
-        <ScorePopup
-          score={currentScore.score}
-          totalQuestions={currentScore.total}
-          onClose={() => setShowScorePopup(false)}
-        />
-      )} */}
-
       <div className="space-y-3">
         {lessons.map((lesson, index) => {
           const progress = progressMap[lesson.id]
@@ -380,11 +304,11 @@ export default function ListenTab() {
                   </div>
 
                   {/* Play Button */}
-                  <div className="flex gap-4 ml-4">
+                  {/* <div className="flex gap-4 ml-4">
                     <button className="bg-green-400 hover:bg-green-500 text-white rounded-full p-6 transition shadow-lg transform hover:scale-110">
                       <span className="text-4xl">▶️</span>
                     </button>
-                  </div>
+                  </div> */}
                 </div>
               </button>
             </Link>

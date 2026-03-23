@@ -45,17 +45,22 @@ app.mount(
     StaticFiles(directory=str(TEMP_TTS_DIR)),
     name="temp_tts",
 )
+
+
 from app.api.auth_api import router as auth_router
 from app.api.voice_chat import router as voice_router
 from app.api.stt import router as stt_router
 from app.api.lesson import router as lessons_router
-from app.api.progress import router as progress_router  
+from app.api.progress import router as progress_router
+from app.api.websocket_chat import router as ws_router  
+
 
 app.include_router(auth_router, prefix="/api", tags=["Authentication"])
 app.include_router(lessons_router, prefix="/api", tags=["Lessons"])
 app.include_router(progress_router, prefix="/api", tags=["Progress"])
 app.include_router(voice_router, prefix="/api", tags=["Voice Chat"])
 app.include_router(stt_router, prefix="/api", tags=["Speech-to-Text"])
+app.include_router(ws_router, tags=["WebSocket"]) 
 
 
 @app.get("/")
@@ -83,52 +88,58 @@ def root():
             },
             "voice_chat": "/api/voice-chat",
             "stt": "/api/speech-to-text",
+            
+        
+            "websocket": {
+                "chat": "/ws/chat/{user_id}",
+                "health": "/ws/health"
+            }
         },
         "notes": {
             "short_story": "By default, API returns short_story (faster audio). Use ?use_short=false for original.",
-            "audio": "Audio files are cached in /temp_tts directory"
+            "audio": "Audio files are cached in /temp_tts directory",
+            "websocket": "WebSocket endpoint for realtime voice chat (faster than HTTP)"  # ← NEW
         }
     }
 
 
 @app.on_event("startup")
 async def startup_event():
-    print("🚀 Starting up...")
+    print("Starting up...")
     
     # Create temp_tts directory
     TEMP_TTS_DIR.mkdir(exist_ok=True)
-    print(f"✅ Created temp_tts directory: {TEMP_TTS_DIR}")
+    print(f"Created temp_tts directory: {TEMP_TTS_DIR}")
     
     # Connect MongoDB
     try:
         init_db()
         db = get_db()
         
-        # 💡 OPTIONAL: Check if short_stories exist
         lessons_with_short = db["lessons"].count_documents({"short_story": {"$exists": True}})
         total_lessons = db["lessons"].count_documents({})
         
-        print(f"✅ MongoDB connected")
-        print(f"   📚 Total lessons: {total_lessons}")
-        print(f"   📝 Lessons with short_story: {lessons_with_short}")
+        print(f"MongoDB connected")
+        print(f" Total lessons: {total_lessons}")
+        print(f"  Lessons with short_story: {lessons_with_short}")
         
         if lessons_with_short == 0:
-            print(f"   ⚠️  No short stories found! Run: python summarize_lessons_simple.py")
-        
+            print(f"     No short stories found! Run: python summarize_lessons_simple.py")
+    
     except Exception as e:
-        print("❌ init_db raised:", e)
+        print(" init_db raised:", e)
 
     # Initialize Groq LLM
     try:
         from app.services import llm_service
         await llm_service.init_client()
-        print("✅ Groq LLM initialized")
+        print(" Groq LLM initialized")
     except Exception as e:
-        print("⚠️ Groq LLM init failed:", e)
+        print(" Groq LLM init failed:", e)
     
-    print("✅ All services initialized")
+    print(" All services initialized")
     print("\n" + "="*70)
-    print("📝 API Endpoints:")
+    print(" API Endpoints:")
     print("   Authentication:")
     print("      POST   /api/auth/register")
     print("      POST   /api/auth/login")
@@ -142,24 +153,30 @@ async def startup_event():
     print("\n   Voice & TTS:")
     print("      POST   /api/voice-chat")
     print("      POST   /api/speech-to-text")
+    
+ 
+    print("\n   WebSocket (Realtime - Faster!):")
+    print("      WS     /ws/chat/{user_id}")
+    print("      GET    /ws/health")
+    
     print("="*70 + "\n")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    print("🛑 Shutting down...")
+    print(" Shutting down...")
     
-    # Close MongoDB connection
+
     try:
         close_db()
     except Exception as e:
-        print("❌ close_db raised:", e)
+        print(" close_db raised:", e)
 
     # Close Groq client
     try:
         from app.services import llm_service
         await llm_service.close_client()
     except Exception as e:
-        print("⚠️ Groq client close failed:", e)
+        print(" Groq client close failed:", e)
     
-    print("✅ Cleanup complete")
+    print(" Cleanup complete")

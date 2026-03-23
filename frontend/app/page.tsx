@@ -68,8 +68,8 @@ export default function LoginPage() {
       <Card className="w-full max-w-md p-8 space-y-6 bg-white shadow-lg">
         <div className="text-center">
           <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="bg-blue-600 text-white rounded-lg px-3 py-2 font-bold text-lg">SF</div>
-            <h1 className="text-3xl font-bold text-gray-900">SpeakFlow</h1>
+            <div className="bg-blue-600 text-white rounded-lg px-3 py-2 font-bold text-lg">ZTO</div>
+            <h1 className="text-3xl font-bold text-gray-900">Zero to One</h1>
           </div>
           <p className="text-gray-500">Master English Today</p>
         </div>

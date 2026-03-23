@@ -3,7 +3,7 @@
 import { useSearchParams, useRouter } from "next/navigation"
 import Header from "../../components/header"
 import { useState, useEffect, useRef } from "react"
- const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ||  "http://localhost:8000/api";
 // Định nghĩa kiểu dữ liệu cho Question
 interface Question {
   type: string;

@@ -4,13 +4,13 @@ import asyncio
 import mimetypes
 from typing import Optional, Any, Dict
 
-# Optional: HTTP fallback
+
 try:
     import requests
 except Exception:
     requests = None
 
-# Try to import the most common client names across versions
+
 try:
     from deepgram import DeepgramClient as _DeepgramClient  # newer name used in docs
 except Exception:
