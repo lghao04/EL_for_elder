@@ -44,7 +44,7 @@ export default function Header({ userAvatar }: HeaderProps) {
       <div className="flex items-center justify-between max-w-7xl mx-auto">
         {/* Logo and App Name */}
         <div className="flex items-center gap-3">
-          <div className="bg-blue-600 text-white rounded-lg px-3 py-2 font-bold text-lg">SF</div>
+          <div className="bg-blue-600 text-white rounded-lg px-3 py-2 font-bold text-lg">STO</div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">ZerotoOne</h1>
             <p className="text-sm text-gray-500">Master English Today</p>

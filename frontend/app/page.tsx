@@ -1,13 +1,13 @@
 // app/page.tsx
 // xừ lí login và đăng ký
 "use client"
-
+import type React from "react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
-import { Card } from "../components/ui/card"
 import { loginUser, registerUser } from "../lib/api"
+import { Heart, Lock, Eye, EyeOff } from "lucide-react"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -17,6 +17,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -63,129 +64,130 @@ export default function LoginPage() {
     }
   }
 
-  return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-md p-8 space-y-6 bg-white shadow-lg">
-        <div className="text-center">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="bg-blue-600 text-white rounded-lg px-3 py-2 font-bold text-lg">ZTO</div>
-            <h1 className="text-3xl font-bold text-gray-900">Zero to One</h1>
+ return (
+    <div className="min-h-screen bg-gradient-to-b from-rose-200 to-rose-100 flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Decorative clouds */}
+      <div className="absolute top-8 left-12 w-20 h-12 bg-white rounded-full shadow-sm opacity-70"></div>
+      <div className="absolute top-24 right-16 w-24 h-14 bg-white rounded-full shadow-sm opacity-70"></div>
+      <div className="absolute bottom-32 left-8 w-28 h-16 bg-white rounded-full shadow-sm opacity-70"></div>
+      <div className="absolute bottom-20 right-12 w-24 h-14 bg-white rounded-full shadow-sm opacity-70"></div>
+
+      {/* Decorative paw prints */}
+      <div className="absolute top-16 right-20 text-rose-400 text-3xl opacity-50">🐾</div>
+      <div className="absolute top-40 left-10 text-rose-400 text-4xl opacity-50">🐾</div>
+      <div className="absolute bottom-40 right-24 text-rose-400 text-3xl opacity-50">🐾</div>
+      <div className="absolute bottom-24 left-16 text-rose-400 text-4xl opacity-50">🐾</div>
+
+      <div className="w-full max-w-md p-8 space-y-8 bg-white/90 rounded-3xl shadow-2xl backdrop-blur-sm relative z-10">
+        {/* Logo and Title */}
+        <div className="text-center space-y-4">
+          <div className="flex items-center justify-center">
+            <div className="w-20 h-20 bg-gradient-to-br from-rose-400 to-rose-500 rounded-2xl flex items-center justify-center shadow-lg transform hover:scale-105 transition-transform">
+              <span className="text-white font-bold text-3xl">ZTO</span>
+            </div>
           </div>
-          <p className="text-gray-500">Master English Today</p>
+          <div>
+            <h1 className="text-3xl font-bold text-rose-900">ZeroToOne</h1>
+            <p className="text-rose-600 text-sm font-medium mt-1">Master Your Skills</p>
+          </div>
         </div>
 
-        <div className="flex gap-2 bg-gray-100 rounded-lg p-1">
+        {/* Login/Register Toggle */}
+        <div className="flex gap-2 bg-rose-100 rounded-full p-1.5">
           <button
-            onClick={() => {
-              setIsLogin(true)
-              setError("")
-            }}
-            className={`flex-1 py-2 px-4 rounded-md transition ${
-              isLogin ? "bg-white shadow-sm font-medium" : "text-gray-600"
+            onClick={() => setIsLogin(true)}
+            className={`flex-1 py-2.5 px-4 rounded-full transition font-semibold ${
+              isLogin
+                ? "bg-white text-rose-900 shadow-md"
+                : "text-rose-700 hover:text-rose-900"
             }`}
           >
             Login
           </button>
           <button
-            onClick={() => {
-              setIsLogin(false)
-              setError("")
-            }}
-            className={`flex-1 py-2 px-4 rounded-md transition ${
-              !isLogin ? "bg-white shadow-sm font-medium" : "text-gray-600"
+            onClick={() => setIsLogin(false)}
+            className={`flex-1 py-2.5 px-4 rounded-full transition font-semibold ${
+              !isLogin
+                ? "bg-white text-rose-900 shadow-md"
+                : "text-rose-700 hover:text-rose-900"
             }`}
           >
             Register
           </button>
         </div>
 
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {!isLogin && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-              <Input
-                type="email"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="w-full text-lg py-6"
-                disabled={loading}
-              />
-            </div>
-          )}
-
-
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
+            <label className="flex items-center gap-2 text-rose-900 font-semibold mb-3">
+              <Heart className="w-5 h-5 fill-rose-400 text-rose-400" />
+              Username:
+            </label>
             <Input
               type="text"
               placeholder="Enter your username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
-              className="w-full text-lg py-6"
-              disabled={loading}
+              className="w-full text-base py-3 rounded-full bg-rose-50 border-2 border-rose-200 focus:border-rose-400 focus:ring-0 placeholder:text-rose-300"
             />
           </div>
 
+          {!isLogin && (
+            <div>
+              <label className="flex items-center gap-2 text-rose-900 font-semibold mb-3">
+                <Heart className="w-5 h-5 fill-rose-400 text-rose-400" />
+                Email:
+              </label>
+              <Input
+                type="email"
+                placeholder="Enter your email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required={!isLogin}
+                className="w-full text-base py-3 rounded-full bg-rose-50 border-2 border-rose-200 focus:border-rose-400 focus:ring-0 placeholder:text-rose-300"
+              />
+            </div>
+          )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
-            <Input
-              type="password"
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full text-lg py-6"
-              disabled={loading}
-              minLength={6}
-            />
-            {!isLogin && (
-              <p className="text-xs text-gray-500 mt-1">Password must be at least 6 characters</p>
-            )}
+            <label className="flex items-center gap-2 text-rose-900 font-semibold mb-3">
+              <Lock className="w-5 h-5 text-rose-400" />
+              Password:
+            </label>
+            <div className="relative">
+              <Input
+                type={showPassword ? "text" : "password"}
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="w-full text-base py-3 rounded-full bg-rose-50 border-2 border-rose-200 focus:border-rose-400 focus:ring-0 placeholder:text-rose-300 pr-12"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 text-rose-400 hover:text-rose-600"
+              >
+                {showPassword ? (
+                  <EyeOff className="w-5 h-5" />
+                ) : (
+                  <Eye className="w-5 h-5" />
+                )}
+              </button>
+            </div>
           </div>
 
-          <Button 
-            type="submit" 
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-6 text-lg"
-            disabled={loading}
+          <Button
+            type="submit"
+            className="w-full bg-gradient-to-r from-rose-400 to-rose-500 hover:from-rose-500 hover:to-rose-600 text-white py-3 text-lg font-bold rounded-full shadow-lg transform hover:scale-105 transition-all"
           >
-            {loading ? (
-              <span className="flex items-center justify-center gap-2">
-                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                </svg>
-                {isLogin ? "Logging in..." : "Creating account..."}
-              </span>
-            ) : (
-              isLogin ? "Login" : "Create Account"
-            )}
+            <span className="text-xl mr-2">✨</span>
+            {isLogin ? "LOGIN" : "CREATE ACCOUNT"}
+            <span className="text-xl ml-2">✨</span>
           </Button>
         </form>
-
-        {isLogin && (
-          <div className="text-center">
-            <p className="text-sm text-gray-600">
-              Don't have an account?{" "}
-              <button
-                onClick={() => setIsLogin(false)}
-                className="text-blue-600 hover:underline font-medium"
-              >
-                Register here
-              </button>
-            </p>
-          </div>
-        )}
-      </Card>
+      </div>
     </div>
   )
 }

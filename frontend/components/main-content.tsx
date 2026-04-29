@@ -1,3 +1,4 @@
+// frontend\components\main-content.tsx
 "use client"
 import ListenTab from "./../components/tabs/listen-tab"
 import SpeakTab from "./../components/tabs/speak-tab"
@@ -13,10 +14,10 @@ interface MainContentProps {
 export default function MainContent({ activeTab, setActiveTab, difficulty }: MainContentProps) {
 
    const tabs = [
-    { id: "listen", label: "👂 Listening" },
-    { id: "speak", label: "🗣️ Speaking" },
-    { id: "read", label: "📖 Reading" },
-    { id: "write", label: "✍️ Writing" },
+    { id: "listen", label: "Listening" },
+    { id: "speak", label: "Speaking" },
+    { id: "read", label: "Reading" },
+    { id: "write", label: "Writing" },
   ]
 
  return (
@@ -27,8 +28,10 @@ export default function MainContent({ activeTab, setActiveTab, difficulty }: Mai
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-8 py-3 rounded-lg font-semibold transition-all whitespace-nowrap ${
-              activeTab === tab.id ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+            className={`px-8 py-3 rounded-lg font-semibold transition-all duration-200 whitespace-nowrap ${
+              activeTab === tab.id
+                ? "bg-gradient-to-r from-pink-400 to-pink-500 text-white shadow-md scale-105"
+                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
             }`}
           >
             {tab.label}
@@ -40,8 +43,8 @@ export default function MainContent({ activeTab, setActiveTab, difficulty }: Mai
       <div className="flex-1 overflow-y-auto">
         {activeTab === "listen" && <ListenTab />}
         {activeTab === "speak" && <SpeakTab difficulty={difficulty} />}
-        {/* {activeTab === "read" && <ReadTab difficulty={difficulty} />}
-        {activeTab === "write" && <WriteTab difficulty={difficulty} />} */}
+        {activeTab === "read" && <ReadTab />}
+        {activeTab === "write" && <WriteTab difficulty={difficulty} />}
       </div>
     </div>
   )

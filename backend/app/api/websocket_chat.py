@@ -113,22 +113,21 @@ async def websocket_chat(websocket: WebSocket, user_id: str):
                     # Generate TTS audio (existing service)
                     logger.info("Generating TTS audio...")
                     tts_task = asyncio.to_thread(
-                        text_to_speech, 
-                        assistant_text, 
+                        text_to_speech,
+                        assistant_text,
                         language
                     )
-                    audio_url = await asyncio.wait_for(tts_task, timeout=25)
-                    
-                    if audio_url:
-                        logger.info(f"TTS audio ready: {audio_url}")
-                        
-                        # Send audio URL
+                    audio_bytes = await asyncio.wait_for(tts_task, timeout=25)
+
+                    if audio_bytes:
+                        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
                         await websocket.send_json({
-                            "type": "audio_url",
-                            "url": audio_url
+                            "type": "audio_data",
+                            "data": audio_b64,
+                            "mime_type": "audio/mpeg"
                         })
                     else:
-                        logger.warning("TTS returned no audio URL")
+                        logger.warning("TTS returned no audio bytes")
                 
                 except asyncio.TimeoutError:
                     logger.error("LLM or TTS timeout")
@@ -303,18 +302,17 @@ async def websocket_chat(websocket: WebSocket, user_id: str):
                         assistant_text,
                         language
                     )
-                    audio_url = await asyncio.wait_for(tts_task, timeout=25)
-                    
-                    if audio_url:
-                        logger.info(f"TTS audio ready: {audio_url}")
-                        
-                        # Send audio URL
+                    audio_bytes = await asyncio.wait_for(tts_task, timeout=25)
+
+                    if audio_bytes:
+                        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
                         await websocket.send_json({
-                            "type": "audio_url",
-                            "url": audio_url
+                            "type": "audio_data",
+                            "data": audio_b64,
+                            "mime_type": "audio/mpeg"
                         })
                     else:
-                        logger.warning("TTS returned no audio URL")
+                        logger.warning("TTS returned no audio bytes")
                 
                 except asyncio.TimeoutError:
                     logger.error("STT, LLM, or TTS timeout")

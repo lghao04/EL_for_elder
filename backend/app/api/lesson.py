@@ -44,7 +44,7 @@ def get_lesson_story(lesson_id: str, db = Depends(get_db)):
     """Lấy story của lesson (original story)"""
     collection = db["lessons"]
     svc = LessonService(collection)
-    # Always use original story (use_short=False)
+
     story = svc.get_story(lesson_id)
     if story is None:
         raise HTTPException(status_code=404, detail="Lesson not found")
@@ -52,7 +52,11 @@ def get_lesson_story(lesson_id: str, db = Depends(get_db)):
 
 
 @router.get("/lessons/{lesson_id}")
-def get_full_lesson(lesson_id: str, lang: str = "en", db = Depends(get_db)):
+def get_full_lesson(
+    lesson_id: str, 
+    lang: str = "en",
+    skill: str = "listening",  # skill có thể là "listening", "speaking", "reading", "writing"
+    db = Depends(get_db)):
     """
     Lấy toàn bộ lesson bao gồm story, questions và audio URL.
     Query params:
@@ -70,7 +74,7 @@ def get_full_lesson(lesson_id: str, lang: str = "en", db = Depends(get_db)):
     
     # Tạo audio cho story (with caching)
     audio_url = None
-    if story and story.strip():
+    if skill == "listening" and story and story.strip():
         audio_url = get_or_create_audio(story, lesson_id, lang)
         if not audio_url:
             print(f"⚠️ Failed to generate audio for lesson {lesson_id}")

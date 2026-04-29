@@ -36,15 +36,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-APP_DIR = Path(__file__).resolve().parent
-TEMP_TTS_DIR = APP_DIR / "temp_tts"
-TEMP_TTS_DIR.mkdir(exist_ok=True)
+# APP_DIR = Path(__file__).resolve().parent
+# TEMP_TTS_DIR = APP_DIR / "temp_tts"
+# TEMP_TTS_DIR.mkdir(exist_ok=True)
 
-app.mount(
-    "/temp_tts",
-    StaticFiles(directory=str(TEMP_TTS_DIR)),
-    name="temp_tts",
-)
+# app.mount(
+#     "/temp_tts",
+#     StaticFiles(directory=str(TEMP_TTS_DIR)),
+#     name="temp_tts",
+# )
 
 
 from app.api.auth_api import router as auth_router
@@ -53,6 +53,8 @@ from app.api.stt import router as stt_router
 from app.api.lesson import router as lessons_router
 from app.api.progress import router as progress_router
 from app.api.websocket_chat import router as ws_router  
+from app.api import writing
+from app.api import listening
 
 
 app.include_router(auth_router, prefix="/api", tags=["Authentication"])
@@ -61,6 +63,8 @@ app.include_router(progress_router, prefix="/api", tags=["Progress"])
 app.include_router(voice_router, prefix="/api", tags=["Voice Chat"])
 app.include_router(stt_router, prefix="/api", tags=["Speech-to-Text"])
 app.include_router(ws_router, tags=["WebSocket"]) 
+app.include_router(writing.router, prefix="/api", tags=["Writing"])
+app.include_router(listening.router, prefix="/api", tags=["Listening"])
 
 
 @app.get("/")
@@ -108,8 +112,8 @@ async def startup_event():
     print("Starting up...")
     
     # Create temp_tts directory
-    TEMP_TTS_DIR.mkdir(exist_ok=True)
-    print(f"Created temp_tts directory: {TEMP_TTS_DIR}")
+    # TEMP_TTS_DIR.mkdir(exist_ok=True)
+    # print(f"Created temp_tts directory: {TEMP_TTS_DIR}")
     
     # Connect MongoDB
     try:

@@ -111,11 +111,11 @@ export default function LessonPage() {
       const token = localStorage.getItem('token')
       
       if (!token) {
-        console.log('⚠️ No auth token, cannot save progress')
+        console.log(' No auth token, cannot save progress')
         return
       }
 
-      console.log('💾 Saving progress to backend:', { lessonId, score })
+      console.log(' Saving progress to backend:', { lessonId, score })
 
       const response = await fetch(`${API_BASE_URL}/progress`, {
         method: 'POST',

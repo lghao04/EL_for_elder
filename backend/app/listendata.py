@@ -1,5 +1,4 @@
 # app/importdata_librispeech.py
-# Đọc data từ LibriSpeech (Hugging Face) và import vào MongoDB (bảng librispeech)
 import requests
 from db import init_db, close_db, get_db
 
@@ -41,32 +40,47 @@ def fetch_rows(split: str, offset: int, length: int = BATCH_SIZE) -> dict | None
 
 
 def parse_row(row_obj: dict) -> dict | None:
-    """
-    Parse 1 row từ API response.
-    Chỉ giữ lại: audio (URL + metadata), text, speaker_id
-    """
     try:
         row = row_obj.get("row", {})
 
-        audio_raw = row.get("audio", {})
-        if isinstance(audio_raw, list):
-            audio_raw = audio_raw[0] if audio_raw else {}
+        speaker_id = row.get("speaker_id")
+        chapter_id = row.get("chapter_id")
+        utt_id     = row.get("id")
 
-        audio = {
-            "src":           audio_raw.get("src", ""),
-            "type":          audio_raw.get("type", ""),       # e.g. "audio/flac"
-            "sampling_rate": audio_raw.get("sampling_rate", 16000),
-        }
+        if not speaker_id or not chapter_id or not utt_id:
+            return None
+
+        # ✅ Lấy URL thật từ HF API response thay vì tự build
+        audio_raw = row.get("audio", [])
+        if isinstance(audio_raw, list):
+            audio_field = audio_raw[0] if audio_raw else {}  # ← lấy phần tử đầu
+        elif isinstance(audio_raw, dict):
+            audio_field = audio_raw
+
+        # HF API trả về audio dạng dict với key "src"
+        audio_src  = audio_field.get("src", "")
+        audio_type = audio_field.get("type", "audio/flac")
+        sampling_rate = audio_field.get("sampling_rate", 16000)
+
+        if not audio_src:
+            print(f"  ⚠️  Không có audio src cho utt_id={utt_id}")
+            return None
 
         return {
             "row_idx":    row_obj.get("row_idx"),
-            "speaker_id": row.get("speaker_id"),
+            "speaker_id": speaker_id,
+            "chapter_id": chapter_id,
+            "utt_id":     utt_id,
             "text":       row.get("text", ""),
-            "audio":      audio,
+            "audio": {
+                "src":           audio_src,
+                "type":          audio_type,
+                "sampling_rate": sampling_rate,
+            }
         }
 
     except Exception as e:
-        print(f"    Lỗi parse row: {str(e)[:120]}")
+        print(f"❌ Lỗi parse row: {str(e)[:120]}")
         return None
 
 
@@ -102,7 +116,7 @@ def download_split(split: str, max_rows: int | None = None) -> list[dict]:
         for row_obj in rows:
             doc = parse_row(row_obj)
             if doc:
-                doc["split_name"] = split  
+                doc["split_name"] = split
                 all_docs.append(doc)
 
         offset += len(rows)
@@ -138,7 +152,6 @@ def import_librispeech(
 
     col = db[COLLECTION_NAME]
 
-    # 2. Xóa data cũ nếu cần
     if clear_existing:
         deleted = col.delete_many({}).deleted_count
         print(f"🗑️  Đã xóa {deleted} documents cũ trong '{COLLECTION_NAME}'")
@@ -158,6 +171,7 @@ def import_librispeech(
         print("\n Không có dữ liệu để import")
         close_db()
         return False
+
     print(f"\nĐang lưu {len(all_docs)} documents vào collection '{COLLECTION_NAME}'...")
     try:
         result = col.insert_many(all_docs, ordered=False)
@@ -186,7 +200,7 @@ def import_librispeech(
         sample.pop("_id", None)
         print(f"\n{i+1}. row_idx={sample.get('row_idx')} | speaker={sample.get('speaker_id')} | split={sample.get('split_name')}")
         print(f"   text     : {sample.get('text', '')[:120]}")
-        print(f"   audio url: {sample.get('audio', {}).get('src', '')[:80]}...")
+        print(f"   audio url: {sample.get('audio', {}).get('src', '')[:120]}")
         print(f"\n   💾 Full JSON:")
         print(json.dumps(sample, indent=2, ensure_ascii=False))
 
@@ -199,7 +213,7 @@ def import_librispeech(
 
 
 def test_fetch():
-    """Test nhanh: fetch 3 rows và in ra để kiểm tra cấu trúc, không cần DB"""
+    """Test nhanh: fetch 3 rows và in ra để kiểm tra cấu trúc + audio URL thật"""
     print("=" * 70)
     print("TEST FETCH 3 ROWS (không lưu DB)")
     print("=" * 70)
@@ -213,7 +227,11 @@ def test_fetch():
     print(f"num_rows_total: {data.get('num_rows_total')}\n")
     for row_obj in data.get("rows", []):
         doc = parse_row(row_obj)
-        print(json.dumps(doc, indent=2, ensure_ascii=False))
+        if doc:
+            print(f"utt_id : {doc['utt_id']}")
+            print(f"text   : {doc['text'][:80]}")
+            print(f"audio  : {doc['audio']['src'][:120]}")
+            print()
 
 
 if __name__ == "__main__":

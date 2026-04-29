@@ -1,14 +1,10 @@
 # app/services/tts_service.py
 from gtts import gTTS
-from pathlib import Path
-import uuid
+from io import BytesIO
 
-BASE_DIR = Path(__file__).parent.parent
-TTS_FOLDER = BASE_DIR / "temp_tts"
-TTS_FOLDER.mkdir(exist_ok=True)
-
-def text_to_speech(text: str, lang: str = "en") -> str:
-    filename = TTS_FOLDER / f"{uuid.uuid4()}.mp3"
+def text_to_speech(text: str, lang: str = "en") -> bytes:
+    buf = BytesIO()
     tts = gTTS(text=text, lang=lang)
-    tts.save(str(filename))
-    return f"/temp_tts/{filename.name}"
+    tts.write_to_fp(buf)
+    buf.seek(0)
+    return buf.read()

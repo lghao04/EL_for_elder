@@ -2,7 +2,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useSearchParams, useRouter } from "next/navigation"
 import Header from "../../components/header"
 import MainContent from "../../components/main-content"
 import RightSidebar from "../../components/right-sidebar"
@@ -11,10 +11,22 @@ import { isAuthenticated, getCurrentUser, getToken } from "../../lib/api"
 
 export default function Dashboard() {
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState("listen")
+  const searchParams = useSearchParams()
+  // const [activeTab, setActiveTab] = useState("listen")
   const [difficulty, setDifficulty] = useState("normal")
-  const { language, setLanguage } = useLanguage()
+  
   const [loading, setLoading] = useState(true)
+ const tabFromUrl = searchParams.get("tab") || "listen"
+  const [activeTab, setActiveTab] = useState(tabFromUrl)
+
+  useEffect(() => {
+    setActiveTab(tabFromUrl)
+  }, [tabFromUrl])
+
+  const handleChangeTab = (tab: string) => {
+    setActiveTab(tab)
+    router.push(`/dashboard?tab=${tab}`)
+  }
 
   useEffect(() => {
     // Check authentication
@@ -66,7 +78,7 @@ export default function Dashboard() {
       <div className="flex-1 flex overflow-hidden gap-6 p-6 max-w-7xl mx-auto w-full">
         {/* Left/Center - Main Content */}
         <div className="flex-1 min-w-0">
-          <MainContent activeTab={activeTab} setActiveTab={setActiveTab} difficulty={difficulty} />
+          <MainContent activeTab={activeTab} setActiveTab={handleChangeTab} difficulty={difficulty} />
         </div>
 
         {/* Right Sidebar - Progress Stats */}
