@@ -44,16 +44,14 @@ async function searchQuestions(keyword: string, skip = 0, limit = 20): Promise<{
   return res.json()
 }
 
-// Danh sách questions (dùng cho cả "click topic" lẫn "search")
+async function fetchRandomQuestion(): Promise<Question | null> {
+  const res = await fetch(`${API_BASE}/writing/questions/random`)
+  if (!res.ok) return null
+  return res.json()
+}
+
 function QuestionList({
-  title,
-  questions,
-  total,
-  loading,
-  onBack,
-  onSelect,
-  onLoadMore,
-  hasMore,
+  title, questions, total, loading, onBack, onSelect, onLoadMore, hasMore,
 }: {
   title: string
   questions: Question[]
@@ -66,7 +64,6 @@ function QuestionList({
 }) {
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center gap-3">
         <button
           onClick={onBack}
@@ -77,13 +74,10 @@ function QuestionList({
         </button>
         <div>
           <h2 className="text-xl font-bold text-pink-700">{title}</h2>
-          {total > 0 && (
-            <p className="text-sm text-gray-500">{total.toLocaleString()} questions</p>
-          )}
+          {total > 0 && <p className="text-sm text-gray-500">{total.toLocaleString()} questions</p>}
         </div>
       </div>
 
-      {/* List */}
       {loading && questions.length === 0 ? (
         <div className="flex justify-center py-16">
           <Loader2 className="w-10 h-10 animate-spin text-pink-500" />
@@ -122,7 +116,7 @@ function QuestionList({
                 disabled={loading}
                 className="flex items-center gap-2 bg-pink-100 hover:bg-pink-200 text-pink-700 font-semibold px-6 py-3 rounded-full transition disabled:opacity-50"
               >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
                 Load more
               </button>
             </div>
@@ -133,29 +127,39 @@ function QuestionList({
   )
 }
 
-// ─── Main Component ───────────────────────────────────────────────
-
 export default function WriteTab({ difficulty }: WriteTabProps) {
   const router = useRouter()
 
-  // "main" | "topics" | "topic-questions" | "search-results"
-  const [view, setView]                     = useState<string>("main")
-  const [selectedMode, setSelectedMode]     = useState<string | null>(null)
+  const [view, setView] = useState<string>("main")
+  const [loadingFreeWrite, setLoadingFreeWrite] = useState(false)
 
-  // Questions list
-  const [questions, setQuestions]           = useState<Question[]>([])
+  // Topics
+  const [topics, setTopics] = useState<Topic[]>([])
+  const [topicsLoading, setTopicsLoading] = useState(false)
+
+  // Questions
+  const [questions, setQuestions] = useState<Question[]>([])
   const [questionsTotal, setQuestionsTotal] = useState(0)
   const [questionsLoading, setQuestionsLoading] = useState(false)
-  const [questionsSkip, setQuestionsSkip]   = useState(0)
-  const [activeTopic, setActiveTopic]       = useState("")
+  const [questionsSkip, setQuestionsSkip] = useState(0)
+  const [activeTopic, setActiveTopic] = useState("")
 
   // Search
-  const [searchQuery, setSearchQuery]       = useState("")
+  const [searchQuery, setSearchQuery] = useState("")
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const LIMIT = 20
 
-  // Debounce search — gọi API sau 350ms
+  // Load topics khi vào browse
+  useEffect(() => {
+    if (view !== "topics") return
+    setTopicsLoading(true)
+    fetchAllTopics()
+      .then(setTopics)
+      .finally(() => setTopicsLoading(false))
+  }, [view])
+
+  // Debounce search
   useEffect(() => {
     if (view !== "search-results") return
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -178,7 +182,37 @@ export default function WriteTab({ difficulty }: WriteTabProps) {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [searchQuery, view])
 
-  // Load more questions (topic hoặc search)
+  // FREE WRITING: fetch random rồi navigate
+  const handleFreeWrite = async () => {
+    setLoadingFreeWrite(true)
+    try {
+      const q = await fetchRandomQuestion()
+      if (q) {
+        router.push(`/write?topic=${encodeURIComponent(q.question)}&id=${q.id}`)
+      } else {
+        router.push("/write")
+      }
+    } catch {
+      router.push("/write")
+    } finally {
+      setLoadingFreeWrite(false)
+    }
+  }
+
+  // Click topic → load questions
+  const handleTopicClick = async (topic: string) => {
+    setActiveTopic(topic)
+    setQuestions([])
+    setQuestionsSkip(0)
+    setView("topic-questions")
+    setQuestionsLoading(true)
+    const data = await fetchQuestionsByTopic(topic, 0, LIMIT)
+    setQuestions(data.questions)
+    setQuestionsTotal(data.total)
+    setQuestionsLoading(false)
+  }
+
+  // Load more
   const handleLoadMore = async () => {
     const nextSkip = questionsSkip + LIMIT
     setQuestionsLoading(true)
@@ -191,18 +225,16 @@ export default function WriteTab({ difficulty }: WriteTabProps) {
     setQuestionsLoading(false)
   }
 
-  // Click 1 question cụ thể → navigate sang trang write
+  // Click question → navigate
   const handleQuestionSelect = (q: Question) => {
     router.push(`/write?topic=${encodeURIComponent(q.question)}&id=${q.id}`)
   }
 
-  const handleSelectMode = (mode: string) => {
-    if (mode === "freewriting") {
-      router.push("/write")
-      return
-    }
-    setSelectedMode(mode)
-    setView(mode === "topics" ? "topics" : "search-results")
+  const handleBackToMain = () => {
+    setView("main")
+    setSearchQuery("")
+    setQuestions([])
+    setQuestionsSkip(0)
   }
 
   const handleBackToTopics = () => {
@@ -211,15 +243,7 @@ export default function WriteTab({ difficulty }: WriteTabProps) {
     setQuestionsSkip(0)
   }
 
-  const handleBackToMain = () => {
-    setSelectedMode(null)
-    setView("main")
-    setSearchQuery("")
-    setQuestions([])
-    setQuestionsSkip(0)
-  }
-
-  // ─── VIEW: question list (topic hoặc search) ───
+  // ─── VIEW: topic-questions ───
   if (view === "topic-questions") {
     return (
       <div className="min-h-screen bg-gradient-to-b from-pink-200 to-pink-100 rounded-3xl p-6 md:p-8">
@@ -244,7 +268,6 @@ export default function WriteTab({ difficulty }: WriteTabProps) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-pink-200 to-pink-100 rounded-3xl p-6 md:p-8">
         <div className="max-w-4xl mx-auto space-y-6">
-          {/* Back */}
           <button
             onClick={handleBackToMain}
             className="flex items-center gap-2 bg-white text-gray-800 px-4 py-2 rounded-full font-semibold hover:bg-gray-100 transition shadow-md"
@@ -253,7 +276,6 @@ export default function WriteTab({ difficulty }: WriteTabProps) {
             Back
           </button>
 
-          {/* Search box */}
           <div className="bg-gradient-to-r from-orange-400 to-rose-400 rounded-3xl p-8 shadow-lg">
             <div className="text-center mb-6">
               <h1 className="text-3xl font-bold text-white flex items-center justify-center gap-2">
@@ -270,15 +292,12 @@ export default function WriteTab({ difficulty }: WriteTabProps) {
                 className="flex-1 px-6 py-3 rounded-full bg-white text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-white/50 font-medium"
               />
               <div className="bg-orange-500 text-white px-8 py-3 rounded-full font-bold shadow-lg flex items-center justify-center gap-2 whitespace-nowrap">
-                {questionsLoading
-                  ? <Loader2 className="w-5 h-5 animate-spin" />
-                  : <SearchIcon className="w-5 h-5" />}
+                {questionsLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <SearchIcon className="w-5 h-5" />}
                 Search
               </div>
             </div>
           </div>
 
-          {/* Results */}
           {searchQuery.trim() && (
             <QuestionList
               title={`Results for "${searchQuery}"`}
@@ -295,7 +314,59 @@ export default function WriteTab({ difficulty }: WriteTabProps) {
       </div>
     )
   }
-  // ─── VIEW: main mode select ───
+
+  // ─── VIEW: browse topics ───
+  if (view === "topics") {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-pink-200 to-pink-100 rounded-3xl p-6 md:p-8">
+        <div className="max-w-4xl mx-auto space-y-6">
+          <button
+            onClick={handleBackToMain}
+            className="flex items-center gap-2 bg-white text-gray-800 px-4 py-2 rounded-full font-semibold hover:bg-gray-100 transition shadow-md"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </button>
+
+          <div className="bg-gradient-to-r from-orange-400 to-rose-400 rounded-3xl p-8 shadow-lg text-center">
+            <h1 className="text-3xl font-bold text-white flex items-center justify-center gap-2">
+              <span>⭐</span> Browse by Topic <span>⭐</span>
+            </h1>
+            <p className="text-white/80 mt-2">Pick a topic to see all questions</p>
+          </div>
+
+          {topicsLoading ? (
+            <div className="flex justify-center py-16">
+              <Loader2 className="w-10 h-10 animate-spin text-pink-500" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {topics.map((t) => (
+                <button
+                  key={t.topic}
+                  onClick={() => handleTopicClick(t.topic)}
+                  className="bg-white rounded-2xl p-5 shadow-md hover:shadow-lg hover:scale-[1.02] transition-all text-left border-2 border-transparent hover:border-pink-300 group"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">📂</span>
+                    <div className="flex-1">
+                      <p className="font-semibold text-gray-800 group-hover:text-pink-600 transition-colors">
+                        {t.topic}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-0.5">{t.count.toLocaleString()} questions</p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-pink-400 transition-colors" />
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ─── VIEW: main ───
   return (
     <div className="min-h-screen bg-gradient-to-b from-pink-200 via-pink-100 to-orange-100 rounded-3xl p-6 md:p-12 relative overflow-hidden">
       <div className="absolute top-8 left-6 text-4xl animate-bounce">💖</div>
@@ -310,10 +381,12 @@ export default function WriteTab({ difficulty }: WriteTabProps) {
 
       <div className="relative z-10 max-w-2xl mx-auto">
         <div className="space-y-6">
+
           {/* Free Writing */}
           <button
-            onClick={() => handleSelectMode("freewriting")}
-            className="w-full group relative overflow-hidden rounded-3xl bg-gradient-to-br from-pink-300 to-pink-200 shadow-lg hover:shadow-2xl transition-all duration-300 hover:scale-105 border-2 border-pink-300 hover:border-pink-400"
+            onClick={handleFreeWrite}
+            disabled={loadingFreeWrite}
+            className="w-full group relative overflow-hidden rounded-3xl bg-gradient-to-br from-pink-300 to-pink-200 shadow-lg hover:shadow-2xl transition-all duration-300 hover:scale-105 border-2 border-pink-300 hover:border-pink-400 disabled:opacity-70 disabled:cursor-wait disabled:hover:scale-100"
           >
             <div className="p-8 relative z-10">
               <div className="flex items-center justify-center gap-3 mb-3">
@@ -323,8 +396,10 @@ export default function WriteTab({ difficulty }: WriteTabProps) {
               </div>
               <p className="text-center text-pink-700 font-semibold mb-6">Write anything your heart desires!</p>
               <div className="flex justify-center">
-                <div className="bg-gradient-to-r from-pink-400 to-rose-300 text-white px-8 py-3 rounded-full font-bold text-lg shadow-lg transform group-hover:scale-110 transition-transform">
-                  ✨ START 
+                <div className="bg-gradient-to-r from-pink-400 to-rose-300 text-white px-8 py-3 rounded-full font-bold text-lg shadow-lg flex items-center gap-2 transform group-hover:scale-110 transition-transform">
+                  {loadingFreeWrite
+                    ? <><Loader2 className="w-5 h-5 animate-spin" /> Loading...</>
+                    : <>✨ START</>}
                 </div>
               </div>
             </div>
@@ -332,7 +407,7 @@ export default function WriteTab({ difficulty }: WriteTabProps) {
 
           {/* Search question */}
           <button
-            onClick={() => handleSelectMode("search")}
+            onClick={() => setView("search-results")}
             className="w-full group relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-300 to-orange-200 shadow-lg hover:shadow-2xl transition-all duration-300 hover:scale-105 border-2 border-orange-300 hover:border-orange-400"
           >
             <div className="p-8 relative z-10">
@@ -344,11 +419,32 @@ export default function WriteTab({ difficulty }: WriteTabProps) {
               <p className="text-center text-orange-700 font-semibold mb-6">Find a specific writing question!</p>
               <div className="flex justify-center">
                 <div className="bg-gradient-to-r from-orange-400 to-amber-300 text-white px-8 py-3 rounded-full font-bold text-lg shadow-lg transform group-hover:scale-110 transition-transform">
-                  ✨ SEARCH 
+                  ✨ SEARCH
                 </div>
               </div>
             </div>
           </button>
+
+          {/* Browse by topic */}
+          <button
+            onClick={() => setView("topics")}
+            className="w-full group relative overflow-hidden rounded-3xl bg-gradient-to-br from-purple-300 to-purple-200 shadow-lg hover:shadow-2xl transition-all duration-300 hover:scale-105 border-2 border-purple-300 hover:border-purple-400"
+          >
+            <div className="p-8 relative z-10">
+              <div className="flex items-center justify-center gap-3 mb-3">
+                <span className="text-2xl">📂</span>
+                <h3 className="text-2xl font-bold text-purple-700">BROWSE BY TOPIC</h3>
+                <span className="text-2xl">📂</span>
+              </div>
+              <p className="text-center text-purple-700 font-semibold mb-6">Explore questions by category!</p>
+              <div className="flex justify-center">
+                <div className="bg-gradient-to-r from-purple-400 to-violet-300 text-white px-8 py-3 rounded-full font-bold text-lg shadow-lg transform group-hover:scale-110 transition-transform">
+                  ✨ BROWSE
+                </div>
+              </div>
+            </div>
+          </button>
+
         </div>
       </div>
     </div>
