@@ -22,13 +22,7 @@ def get_questions(
     Các filter có thể kết hợp với nhau (vd: topic + search, topic + difficulty).
 
     Returns:
-        {
-            "questions": [...],
-            "total": 1000,
-            "skip": 0,
-            "limit": 20,
-            "has_more": true
-        }
+        { "questions": [...], "total": 1000, "skip": 0, "limit": 20, "has_more": true }
     """
     collection = db["topicwriting"]
     service = WritingService(collection)
@@ -49,6 +43,7 @@ def get_questions(
     })
 
 
+# /random phải đứng TRƯỚC /{question_id} để FastAPI không nhầm "random" là một id
 @router.get("/writing/questions/random")
 def get_random_question(
     topic: Optional[str] = Query(None, description="Random trong chủ đề cụ thể"),
@@ -95,6 +90,40 @@ def get_question_by_id(question_id: str, db=Depends(get_db)):
     return JSONResponse(content=question)
 
 
+# ─── TOPICS ──────────────────────────────────────────────────────
+
+# NOTE: /search phải đứng TRƯỚC /topics nếu dùng prefix chung,
+# nhưng ở đây path đầy đủ nên không bị conflict.
+@router.get("/writing/topics/search")
+def search_topics(
+    q: str = Query(..., min_length=1, description="Từ khoá tìm topic"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=50, description="Tối đa 50 mỗi lần"),
+    db=Depends(get_db),
+):
+    """
+    Tìm kiếm topic theo từ khoá — dùng cho search box ở FE.
+    Gõ từng ký tự sẽ trả về các topic khớp, mỗi lần tối đa 50.
+
+    Ví dụ: ?q=heal → [{ "topic": "Health & Medicine", "count": 987 }]
+
+    Returns:
+        { "topics": [...], "total": 5, "skip": 0, "limit": 50, "has_more": false }
+    """
+    collection = db["topicwriting"]
+    service = WritingService(collection)
+
+    topics, total = service.search_topics(q, skip=skip, limit=limit)
+
+    return JSONResponse(content={
+        "topics":   topics,
+        "total":    total,
+        "skip":     skip,
+        "limit":    limit,
+        "has_more": skip + len(topics) < total,
+    })
+
+
 @router.get("/writing/topics")
 def get_topics(db=Depends(get_db)):
     """
@@ -102,13 +131,7 @@ def get_topics(db=Depends(get_db)):
     Dùng để hiển thị menu chọn chủ đề ở frontend.
 
     Returns:
-        {
-            "topics": [
-                { "topic": "Education", "count": 1234 },
-                { "topic": "Health", "count": 987 },
-                ...
-            ]
-        }
+        { "topics": [{ "topic": "Education", "count": 1234 }, ...] }
     """
     collection = db["topicwriting"]
     service = WritingService(collection)
@@ -125,13 +148,7 @@ def get_writing_stats(
     Thống kê tổng quan về writing questions.
 
     Returns:
-        {
-            "total":        10000,
-            "easy_count":   3000,
-            "medium_count": 4000,
-            "hard_count":   3000,
-            "topic":        "Education"  // null nếu không filter
-        }
+        { "total": 10000, "easy_count": 3000, "medium_count": 4000, "hard_count": 3000, "topic": null }
     """
     collection = db["topicwriting"]
     service = WritingService(collection)

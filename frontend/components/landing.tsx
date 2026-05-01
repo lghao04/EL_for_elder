@@ -129,6 +129,8 @@ export default function LandingPage() {
           <p className="text-2xl text-foreground max-w-3xl mx-auto">
             Come join thousands of kids and adults learning together. It's fun, easy, and you can start right now!
           </p>
+
+          
           <Button
             size="lg"
             className="bg-gradient-to-r from-primary to-blue-600 text-white hover:shadow-2xl text-2xl h-20 px-16 font-bold rounded-2xl shadow-lg"

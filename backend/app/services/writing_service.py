@@ -174,3 +174,56 @@ class WritingService:
         except Exception as e:
             print(f"❌ Error counting questions: {e}")
             return 0
+
+    def search_topics(
+        self,
+        keyword: str,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> tuple[List[Dict], int]:
+        """
+        Tìm kiếm topics có chứa keyword (case-insensitive).
+        Trả về danh sách topic + số question, mỗi lần tối đa 50.
+
+        Ví dụ keyword="heal" trả về:
+            [{ "topic": "Health & Medicine", "count": 987 }, ...]
+
+        Args:
+            keyword: Từ người dùng gõ vào
+            skip:    Pagination offset
+            limit:   Tối đa 50 để không ảnh hưởng tốc độ
+
+        Returns:
+            (list_topics, total_matched_topics)
+        """
+        try:
+            pipeline = [
+                # Gom nhóm theo topic, đếm số question
+                {"": {"_id": "", "count": {"": 1}}},
+                # Lọc topic chứa keyword (case-insensitive)
+                {"": {
+                    "_id": {"": keyword, "": "i"}
+                }},
+                {"": {"count": -1}},
+                # Dùng \ để lấy total + data trong 1 query
+                {"": {
+                    "total": [{"": "n"}],
+                    "data":  [{"": skip}, {"": limit}],
+                }},
+            ]
+
+            result = list(self.collection.aggregate(pipeline))
+            if not result:
+                return [], 0
+
+            facet  = result[0]
+            total  = facet["total"][0]["n"] if facet["total"] else 0
+            topics = [
+                {"topic": r["_id"] or "Other", "count": r["count"]}
+                for r in facet["data"]
+            ]
+            return topics, total
+
+        except Exception as e:
+            print(f"❌ Error searching topics: {e}")
+            return [], 0

@@ -12,7 +12,7 @@ export default function SpeakPage() {
 
   return (
     <div className="min-h-screen bg-white flex flex-col">
-      <Header userAvatar="👧"  />
+      <Header userAvatar=""  />
 
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">

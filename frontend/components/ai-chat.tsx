@@ -305,69 +305,73 @@ export default function AIChat() {
   }, [])
 
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-blue-100 via-yellow-100 to-pink-100">
-      {/* Connection status */}
-      <div className={`text-center text-sm py-1 font-semibold ${wsConnected ? "bg-green-100 text-green-600" : "bg-yellow-100 text-yellow-600"}`}>
-        {wsConnected ? "🟢 Connected" : "🟡 Connecting..."}
-      </div>
-
-      {/* Chat Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((message) => (
-          <div key={message.id} className={`flex ${message.type === "user" ? "justify-end" : "justify-start"}`}>
-            <div
-              className={`max-w-xs lg:max-w-md px-6 py-4 rounded-3xl text-lg font-semibold shadow-lg ${
-                message.type === "user"
-                  ? "bg-gradient-to-r from-green-400 to-emerald-400 text-white"
-                  : "bg-white text-gray-800 border-4 border-blue-300"
-              }`}
-            >
-              {message.text}
-            </div>
-          </div>
-        ))}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Recording Section */}
-      <div className="bg-white border-t-4 border-blue-300 p-4 flex flex-col items-center gap-3">
-        {loading && (
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-blue-500 rounded-full animate-bounce" />
-            <p className="text-lg font-bold text-blue-500">Processing...</p>
-          </div>
-        )}
-
-        <button
-          onClick={handleMicClick}
-          disabled={loading || !wsConnected}
-          className={`rounded-full p-6 text-4xl transition-all transform ${
-            recording
-              ? "bg-red-500 hover:bg-red-600 scale-110 animate-pulse shadow-2xl"
-              : isPlaying
-              ? "bg-blue-400 hover:bg-blue-500 shadow-2xl"
-              : loading || !wsConnected
-              ? "bg-gray-400 cursor-not-allowed shadow-2xl"
-              : "bg-green-400 hover:bg-green-500 hover:scale-105 shadow-2xl"
-          }`}
-        >
-          {recording ? "⏹️" : isPlaying ? "🔊" : "🎤"}
-        </button>
-
-        {recording && (
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-            <p className="text-lg font-bold text-red-500">Listening...</p>
-          </div>
-        )}
-
-        {isPlaying && (
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse" />
-            <p className="text-lg font-bold text-blue-500">Playing...</p>
-          </div>
-        )}
-      </div>
+    <div className="flex flex-col h-screen bg-gradient-to-br from-pink-100 via-orange-100 to-rose-100">
+    {/* Connection status */}
+    <div className={`text-center text-sm py-1 font-semibold ${
+      wsConnected 
+        ? "bg-pink-100 text-pink-600" 
+        : "bg-orange-100 text-orange-600"
+    }`}>
+      {wsConnected ? "🟢 Connected" : "🟡 Connecting..."}
     </div>
+
+    {/* Chat Messages */}
+    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {messages.map((message) => (
+        <div key={message.id} className={`flex ${message.type === "user" ? "justify-end" : "justify-start"}`}>
+          <div
+            className={`max-w-xs lg:max-w-md px-6 py-4 rounded-3xl text-lg font-semibold shadow-lg ${
+              message.type === "user"
+                ? "bg-gradient-to-r from-pink-400 to-orange-400 text-white"
+                : "bg-white text-gray-800 border-4 border-pink-300"
+            }`}
+          >
+            {message.text}
+          </div>
+        </div>
+      ))}
+      <div ref={messagesEndRef} />
+    </div>
+
+    {/* Recording Section */}
+    <div className="bg-white border-t-4 border-pink-300 p-4 flex flex-col items-center gap-3">
+      {loading && (
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-orange-400 rounded-full animate-bounce" />
+          <p className="text-lg font-bold text-orange-500">Processing...</p>
+        </div>
+      )}
+
+      <button
+        onClick={handleMicClick}
+        disabled={loading || !wsConnected}
+        className={`rounded-full p-6 text-4xl transition-all transform ${
+          recording
+            ? "bg-rose-500 hover:bg-rose-600 scale-110 animate-pulse shadow-2xl"
+            : isPlaying
+            ? "bg-orange-400 hover:bg-orange-500 shadow-2xl"
+            : loading || !wsConnected
+            ? "bg-gray-400 cursor-not-allowed shadow-2xl"
+            : "bg-pink-400 hover:bg-pink-500 hover:scale-105 shadow-2xl"
+        }`}
+      >
+        {recording ? "⏹️" : isPlaying ? "🔊" : "🎤"}
+      </button>
+
+      {recording && (
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-rose-500 rounded-full animate-pulse" />
+          <p className="text-lg font-bold text-rose-500">Listening...</p>
+        </div>
+      )}
+
+      {isPlaying && (
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-orange-400 rounded-full animate-pulse" />
+          <p className="text-lg font-bold text-orange-500">Playing...</p>
+        </div>
+      )}
+    </div>
+  </div>
   )
 }

@@ -137,17 +137,6 @@ export default function ReadingDetail({ lesson, data }: ReadingDetailProps) {
   // ================= MAIN =================
   return (
     <div className="space-y-8">
-      {/* HEADER */}
-      {/* <div className="bg-white rounded-2xl p-6 shadow-lg border-4 border-orange-200">
-        <h2 className="text-4xl font-bold text-gray-800 mb-2">
-          {lesson.title || "Reading Lesson"}
-        </h2>
-        <p className="text-2xl text-gray-600">{lesson.topic}</p>
-        <span className="inline-block mt-4 text-lg px-6 py-2 rounded-full bg-orange-100 text-orange-600 font-bold">
-          {lesson.difficulty}
-        </span>
-      </div> */}
-
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* STORY */}
         <div className="bg-gradient-to-br from-orange-100 to-rose-100 rounded-3xl p-8 shadow-lg border-4 border-orange-200">
