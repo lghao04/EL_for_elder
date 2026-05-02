@@ -1,70 +1,82 @@
 # app/api/listening.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from app.db import get_db
-from app.services.listening_service import ListeningService
+from app.services.listening_service import (
+    get_all_listening,
+    get_listening_by_id,
+    generate_questions_with_options,
+)
 import requests
-import io
-import soundfile as sf
 
-router = APIRouter()
+router = APIRouter(prefix="/listen", tags=["Listening ESL"])
 
-
-@router.get("/listening")
-def list_listening_exercises(skip: int = 0, limit: int = 20, db=Depends(get_db)):
-    collection = db["librispeech"]
-    service = ListeningService(collection)
-    exercises = service.get_all_exercises(skip=skip, limit=limit)
-    return {"exercises": exercises, "count": len(exercises)}
+ESL_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Referer": "https://www.esl-lab.com/"
+}
 
 
-@router.get("/listening/audio-proxy")
-def proxy_audio(url: str):
+@router.get("/audio-proxy")
+def proxy_audio(url: str = Query(..., description="Audio URL từ CDN ESL Lab")):
     """
-    Fetch FLAC từ HuggingFace CDN và stream về WAV.
-    Giải quyết CORS + browser không support FLAC.
+    Proxy fetch audio từ CDN ESL Lab về browser.
+    Dùng khi CDN block direct request từ frontend.
     """
-    if not url:
-        raise HTTPException(status_code=400, detail="Missing 'url' parameter")
+    if not url.startswith("https://esllab.b-cdn.net/"):
+        raise HTTPException(status_code=400, detail="URL không hợp lệ")
 
     try:
-        resp = requests.get(url, timeout=30, allow_redirects=True,
-                            headers={"User-Agent": "Mozilla/5.0"})
+        resp = requests.get(url, headers=ESL_HEADERS, timeout=30, stream=True)
         resp.raise_for_status()
-    except requests.exceptions.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"Source returned {resp.status_code}: {str(e)}")
     except requests.exceptions.Timeout:
         raise HTTPException(status_code=504, detail="Audio source timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
 
-    try:
-        audio_data, sr = sf.read(io.BytesIO(resp.content))
-        wav_buf = io.BytesIO()
-        sf.write(wav_buf, audio_data, sr, format="WAV", subtype="PCM_16")
-        wav_buf.seek(0)
-        return StreamingResponse(wav_buf, media_type="audio/wav",
-                                 headers={"Content-Disposition": "inline"})
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Audio conversion failed: {str(e)}")
+    return StreamingResponse(
+        resp.iter_content(chunk_size=8192),
+        media_type="audio/mpeg",
+        headers={"Accept-Ranges": "bytes"}
+    )
 
 
-@router.get("/listening/random")
-def get_random_listening_exercise(db=Depends(get_db)):
-    collection = db["librispeech"]
-    service = ListeningService(collection)
-    exercise = service.get_random_exercise()
-    if not exercise:
-        raise HTTPException(status_code=404, detail="No listening exercise found")
-    return exercise
+@router.get("/")
+def list_listening(
+    level: str = Query(None, description="easy | intermediate | difficult"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db=Depends(get_db),
+):
+    items = get_all_listening(db, level=level, skip=skip, limit=limit)
+    return {"total": len(items), "data": items}
 
 
-@router.get("/listening/{exercise_id}")
-def get_listening_exercise(exercise_id: str, db=Depends(get_db)):
-    collection = db["librispeech"]
-    service = ListeningService(collection)
-    exercise = service.get_exercise_full(exercise_id)
-    if not exercise:
-        raise HTTPException(status_code=404,
-                            detail=f"Listening exercise '{exercise_id}' not found")
-    return exercise
+@router.get("/{listening_id}")
+def get_listening(listening_id: str, db=Depends(get_db)):
+    item = get_listening_by_id(db, listening_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Listening not found")
+    return item
+
+
+@router.post("/{listening_id}/generate-questions")
+async def generate_questions(
+    listening_id: str,
+    force_regenerate: bool = Query(False, description="Regenerate dù đã có cache"),
+    db=Depends(get_db),
+):
+    """
+    Generate multiple-choice questions cho một listening item.
+    - Lần đầu: gọi LLM → lưu vào DB → trả về.
+    - Lần sau: lấy cache từ DB (trừ khi force_regenerate=true).
+    """
+    result = await generate_questions_with_options(
+        db=db,
+        listening_id=listening_id,
+        force_regenerate=force_regenerate,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Listening not found")
+
+    return result

@@ -57,26 +57,37 @@ function QuestionList({
   questions: Question[]
   total: number
   loading: boolean
-  onBack: () => void
+  onBack?: () => void   // optional — omit to hide the Back button
   onSelect: (q: Question) => void
   onLoadMore: () => void
   hasMore: boolean
 }) {
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-2 bg-white text-gray-800 px-4 py-2 rounded-full font-semibold hover:bg-gray-100 transition shadow-md"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back
-        </button>
+      {/* Header row — only rendered when onBack is provided */}
+      {onBack && (
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onBack}
+            className="flex items-center gap-2 bg-white text-gray-800 px-4 py-2 rounded-full font-semibold hover:bg-gray-100 transition shadow-md"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </button>
+          <div>
+            <h2 className="text-xl font-bold text-pink-700">{title}</h2>
+            {total > 0 && <p className="text-sm text-gray-500">{total.toLocaleString()} questions</p>}
+          </div>
+        </div>
+      )}
+
+      {/* Title + count without Back button (used in search view) */}
+      {!onBack && (
         <div>
           <h2 className="text-xl font-bold text-pink-700">{title}</h2>
           {total > 0 && <p className="text-sm text-gray-500">{total.toLocaleString()} questions</p>}
         </div>
-      </div>
+      )}
 
       {loading && questions.length === 0 ? (
         <div className="flex justify-center py-16">
@@ -133,24 +144,20 @@ export default function WriteTab({ difficulty }: WriteTabProps) {
   const [view, setView] = useState<string>("main")
   const [loadingFreeWrite, setLoadingFreeWrite] = useState(false)
 
-  // Topics
   const [topics, setTopics] = useState<Topic[]>([])
   const [topicsLoading, setTopicsLoading] = useState(false)
 
-  // Questions
   const [questions, setQuestions] = useState<Question[]>([])
   const [questionsTotal, setQuestionsTotal] = useState(0)
   const [questionsLoading, setQuestionsLoading] = useState(false)
   const [questionsSkip, setQuestionsSkip] = useState(0)
   const [activeTopic, setActiveTopic] = useState("")
 
-  // Search
   const [searchQuery, setSearchQuery] = useState("")
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const LIMIT = 20
 
-  // Load topics khi vào browse
   useEffect(() => {
     if (view !== "topics") return
     setTopicsLoading(true)
@@ -159,7 +166,6 @@ export default function WriteTab({ difficulty }: WriteTabProps) {
       .finally(() => setTopicsLoading(false))
   }, [view])
 
-  // Debounce search
   useEffect(() => {
     if (view !== "search-results") return
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -182,7 +188,6 @@ export default function WriteTab({ difficulty }: WriteTabProps) {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [searchQuery, view])
 
-  // FREE WRITING: fetch random rồi navigate
   const handleFreeWrite = async () => {
     setLoadingFreeWrite(true)
     try {
@@ -199,7 +204,6 @@ export default function WriteTab({ difficulty }: WriteTabProps) {
     }
   }
 
-  // Click topic → load questions
   const handleTopicClick = async (topic: string) => {
     setActiveTopic(topic)
     setQuestions([])
@@ -212,7 +216,6 @@ export default function WriteTab({ difficulty }: WriteTabProps) {
     setQuestionsLoading(false)
   }
 
-  // Load more
   const handleLoadMore = async () => {
     const nextSkip = questionsSkip + LIMIT
     setQuestionsLoading(true)
@@ -225,7 +228,6 @@ export default function WriteTab({ difficulty }: WriteTabProps) {
     setQuestionsLoading(false)
   }
 
-  // Click question → navigate
   const handleQuestionSelect = (q: Question) => {
     router.push(`/write?topic=${encodeURIComponent(q.question)}&id=${q.id}`)
   }
@@ -263,11 +265,13 @@ export default function WriteTab({ difficulty }: WriteTabProps) {
     )
   }
 
-  // ─── VIEW: search ───
+  // ─── VIEW: search-results ───
   if (view === "search-results") {
     return (
       <div className="min-h-screen bg-gradient-to-b from-pink-200 to-pink-100 rounded-3xl p-6 md:p-8">
         <div className="max-w-4xl mx-auto space-y-6">
+
+          {/* Single Back button — owned by this view, not QuestionList */}
           <button
             onClick={handleBackToMain}
             className="flex items-center gap-2 bg-white text-gray-800 px-4 py-2 rounded-full font-semibold hover:bg-gray-100 transition shadow-md"
@@ -298,68 +302,17 @@ export default function WriteTab({ difficulty }: WriteTabProps) {
             </div>
           </div>
 
+          {/* QuestionList WITHOUT onBack → no duplicate Back button */}
           {searchQuery.trim() && (
             <QuestionList
               title={`Results for "${searchQuery}"`}
               questions={questions}
               total={questionsTotal}
               loading={questionsLoading}
-              onBack={handleBackToMain}
               onSelect={handleQuestionSelect}
               onLoadMore={handleLoadMore}
               hasMore={questions.length < questionsTotal}
             />
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  // ─── VIEW: browse topics ───
-  if (view === "topics") {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-pink-200 to-pink-100 rounded-3xl p-6 md:p-8">
-        <div className="max-w-4xl mx-auto space-y-6">
-          <button
-            onClick={handleBackToMain}
-            className="flex items-center gap-2 bg-white text-gray-800 px-4 py-2 rounded-full font-semibold hover:bg-gray-100 transition shadow-md"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </button>
-
-          <div className="bg-gradient-to-r from-orange-400 to-rose-400 rounded-3xl p-8 shadow-lg text-center">
-            <h1 className="text-3xl font-bold text-white flex items-center justify-center gap-2">
-              <span>⭐</span> Browse by Topic <span>⭐</span>
-            </h1>
-            <p className="text-white/80 mt-2">Pick a topic to see all questions</p>
-          </div>
-
-          {topicsLoading ? (
-            <div className="flex justify-center py-16">
-              <Loader2 className="w-10 h-10 animate-spin text-pink-500" />
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {topics.map((t) => (
-                <button
-                  key={t.topic}
-                  onClick={() => handleTopicClick(t.topic)}
-                  className="bg-white rounded-2xl p-5 shadow-md hover:shadow-lg hover:scale-[1.02] transition-all text-left border-2 border-transparent hover:border-pink-300 group"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">📂</span>
-                    <div className="flex-1">
-                      <p className="font-semibold text-gray-800 group-hover:text-pink-600 transition-colors">
-                        {t.topic}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-0.5">{t.count.toLocaleString()} questions</p>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-pink-400 transition-colors" />
-                  </div>
-                </button>
-              ))}
-            </div>
           )}
         </div>
       </div>
@@ -420,26 +373,6 @@ export default function WriteTab({ difficulty }: WriteTabProps) {
               <div className="flex justify-center">
                 <div className="bg-gradient-to-r from-orange-400 to-amber-300 text-white px-8 py-3 rounded-full font-bold text-lg shadow-lg transform group-hover:scale-110 transition-transform">
                   ✨ SEARCH
-                </div>
-              </div>
-            </div>
-          </button>
-
-          {/* Browse by topic */}
-          <button
-            onClick={() => setView("topics")}
-            className="w-full group relative overflow-hidden rounded-3xl bg-gradient-to-br from-purple-300 to-purple-200 shadow-lg hover:shadow-2xl transition-all duration-300 hover:scale-105 border-2 border-purple-300 hover:border-purple-400"
-          >
-            <div className="p-8 relative z-10">
-              <div className="flex items-center justify-center gap-3 mb-3">
-                <span className="text-2xl">📂</span>
-                <h3 className="text-2xl font-bold text-purple-700">BROWSE BY TOPIC</h3>
-                <span className="text-2xl">📂</span>
-              </div>
-              <p className="text-center text-purple-700 font-semibold mb-6">Explore questions by category!</p>
-              <div className="flex justify-center">
-                <div className="bg-gradient-to-r from-purple-400 to-violet-300 text-white px-8 py-3 rounded-full font-bold text-lg shadow-lg transform group-hover:scale-110 transition-transform">
-                  ✨ BROWSE
                 </div>
               </div>
             </div>

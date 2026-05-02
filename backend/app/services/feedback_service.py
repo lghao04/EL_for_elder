@@ -1,16 +1,15 @@
-# app/services/writing_service.py
+# app/services/feedback_service.py
 import json
 import re
-from typing import Optional
-from pydantic import BaseModel
 from .llm_service import chat_with_messages_async
+from pydantic import BaseModel
 
 
 # ─── Pydantic Models ──────────────────────────────────────────────────────────
 
 class RatingItem(BaseModel):
-    stars: int          # 1–5
-    label: str          # Excellent | Good | Improving | Basic | Needs work
+    stars: int
+    label: str
     comment: str
 
 class GrammarError(BaseModel):
@@ -33,6 +32,14 @@ class Ratings(BaseModel):
     vocabulary: RatingItem
     naturalEnglish: RatingItem
 
+class HighlightSpan(BaseModel):
+    start: int
+    end: int
+    type: str
+    original: str
+    corrected: str
+    explanation: str
+
 class WritingFeedback(BaseModel):
     ratings: Ratings
     overallFeedback: str
@@ -40,65 +47,108 @@ class WritingFeedback(BaseModel):
     rewrittenSentences: list[RewrittenSentence]
     topicCheck: TopicCheck
     encouragement: str
+    highlights: list[HighlightSpan]
+
+
+# ─── Highlight Builder ────────────────────────────────────────────────────────
+
+def _build_highlights(essay: str, errors: list[GrammarError]) -> list[HighlightSpan]:
+    spans: list[HighlightSpan] = []
+    cursor = 0
+
+    for err in errors:
+        needle = err.original
+        idx = essay.lower().find(needle.lower(), cursor)
+        if idx == -1:
+            idx = essay.lower().find(needle.lower())
+        if idx == -1:
+            continue
+
+        error_type = "spelling" if " " not in needle.strip() else "grammar"
+        spans.append(HighlightSpan(
+            start=idx,
+            end=idx + len(needle),
+            type=error_type,
+            original=essay[idx: idx + len(needle)],
+            corrected=err.corrected,
+            explanation=err.explanation,
+        ))
+        cursor = idx + len(needle)
+
+    spans.sort(key=lambda s: s.start)
+    return spans
 
 
 # ─── Prompt Builder ───────────────────────────────────────────────────────────
 
 def _build_prompt(topic: str, essay: str) -> str:
+    # Escape any quotes in the essay to avoid breaking the JSON template
+    safe_essay = essay.replace('"', '\\"')
+    safe_topic = topic.replace('"', '\\"')
+
     return f"""You are a friendly English writing coach helping beginners improve their writing.
-Analyze the following essay and return ONLY a valid JSON object — no markdown, no explanation, no extra text.
+Analyze the essay below and return ONLY a valid JSON object.
 
-TOPIC: "{topic}"
-ESSAY: "{essay}"
+STRICT RULES — failure to follow will break the system:
+1. Return raw JSON only. No markdown, no code fences, no explanation before or after.
+2. Every string value MUST use double quotes. Single quotes are NOT allowed.
+3. Do NOT use newlines inside string values. Write each value on one line.
+4. Keep every string value SHORT: comment ≤ 15 words, explanation ≤ 20 words, tip ≤ 20 words.
+5. overallFeedback: 2 sentences max. encouragement: 1 sentence max.
+6. grammarErrors: up to 5 items. rewrittenSentences: up to 3 items.
+7. The "original" field in grammarErrors MUST be copied EXACTLY from the essay (same words, same spelling).
 
-Return this exact JSON structure:
+TOPIC: "{safe_topic}"
+ESSAY: "{safe_essay}"
+
+Return exactly this structure:
 {{
   "ratings": {{
-    "topic":         {{ "stars": <1-5>, "label": "<Excellent|Good|Improving|Basic|Needs work>", "comment": "<brief>" }},
-    "grammar":       {{ "stars": <1-5>, "label": "<Excellent|Good|Improving|Basic|Needs work>", "comment": "<brief>" }},
-    "vocabulary":    {{ "stars": <1-5>, "label": "<Excellent|Good|Improving|Basic|Needs work>", "comment": "<brief>" }},
-    "naturalEnglish":{{ "stars": <1-5>, "label": "<Excellent|Good|Improving|Basic|Needs work>", "comment": "<brief>" }}
+    "topic":          {{"stars": 1, "label": "Needs work", "comment": "short comment here"}},
+    "grammar":        {{"stars": 3, "label": "Improving",  "comment": "short comment here"}},
+    "vocabulary":     {{"stars": 3, "label": "Improving",  "comment": "short comment here"}},
+    "naturalEnglish": {{"stars": 3, "label": "Improving",  "comment": "short comment here"}}
   }},
-  "overallFeedback": "<2-3 encouraging sentences>",
+  "overallFeedback": "One or two sentences of overall feedback.",
   "grammarErrors": [
-    {{ "original": "<wrong text>", "corrected": "<fixed text>", "explanation": "<simple reason>" }}
+    {{"original": "exact phrase from essay", "corrected": "fixed phrase", "explanation": "short reason"}}
   ],
   "rewrittenSentences": [
-    {{ "original": "<awkward sentence>", "improved": "<natural version>", "tip": "<why it's better>" }}
+    {{"original": "awkward sentence", "improved": "better version", "tip": "short tip"}}
   ],
-  "topicCheck": {{
-    "isOnTopic": <true|false>,
-    "comment": "<comment on relevance to topic>"
-  }},
-  "encouragement": "<one warm motivating message>"
+  "topicCheck": {{"isOnTopic": true, "comment": "short comment"}},
+  "encouragement": "One warm sentence."
 }}
 
-Rules:
-- grammarErrors: up to 5 most important errors only
-- rewrittenSentences: pick up to 3 sentences to improve
-- Keep all explanations at A2-B1 level English (simple words)
-- Be encouraging and supportive, never harsh"""
+label must be one of: Excellent, Good, Improving, Basic, Needs work"""
+
+
+# ─── JSON cleaner ─────────────────────────────────────────────────────────────
+
+def _clean_json(raw: str) -> str:
+    """Strip markdown fences and any leading/trailing non-JSON text."""
+    # Remove ```json ... ``` or ``` ... ```
+    cleaned = re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("`").strip()
+    # Find the first { and last } in case model adds preamble text
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        cleaned = cleaned[start: end + 1]
+    return cleaned
 
 
 # ─── Main Service Function ────────────────────────────────────────────────────
 
+MAX_RETRIES = 2
+
 async def grade_writing(topic: str, essay: str) -> WritingFeedback:
-    """
-    Grade a user's essay using Groq LLM.
-
-    Args:
-        topic: The writing prompt/topic
-        essay: The user's written essay
-
-    Returns:
-        WritingFeedback with ratings, grammar fixes, rewrites, etc.
-    """
     messages = [
         {
             "role": "system",
             "content": (
                 "You are an expert English writing coach for beginners. "
-                "You always respond with valid JSON only — no markdown, no preamble."
+                "You ALWAYS respond with a single valid JSON object and nothing else. "
+                "No markdown. No code fences. No text before or after the JSON."
             ),
         },
         {
@@ -107,20 +157,41 @@ async def grade_writing(topic: str, essay: str) -> WritingFeedback:
         },
     ]
 
-    raw = await chat_with_messages_async(
-        messages=messages,
-        temperature=0.3,    # low temp → consistent, structured output
-        max_tokens=2000,
-    )
+    last_error: Exception | None = None
 
-    # Strip markdown fences if model adds them anyway
-    cleaned = re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("```").strip()
+    for attempt in range(1, MAX_RETRIES + 1):
+        raw = await chat_with_messages_async(
+            messages=messages,
+            temperature=0.2,   # lower = more deterministic / less hallucination
+            max_tokens=2000,
+        )
 
-    try:
-        data = json.loads(cleaned)
-    except json.JSONDecodeError as e:
-        print(f"❌ Failed to parse writing feedback JSON: {e}")
-        print(f"Raw response: {raw[:500]}")
-        raise ValueError(f"AI returned invalid JSON: {e}")
+        cleaned = _clean_json(raw)
 
-    return WritingFeedback(**data)
+        try:
+            data = json.loads(cleaned)
+        except json.JSONDecodeError as e:
+            print(f"⚠️  Attempt {attempt}/{MAX_RETRIES} — invalid JSON: {e}")
+            print(f"   Raw (first 600 chars): {raw[:600]}")
+            last_error = e
+
+            # On retry, tell the model what went wrong
+            messages.append({"role": "assistant", "content": raw})
+            messages.append({
+                "role": "user",
+                "content": (
+                    f"Your response was not valid JSON. Parse error: {e}. "
+                    "Please return ONLY the corrected JSON object. "
+                    "No markdown, no explanation, no text outside the JSON."
+                ),
+            })
+            continue
+
+        feedback = WritingFeedback(
+            **data,
+            highlights=[],
+        )
+        feedback.highlights = _build_highlights(essay, feedback.grammarErrors)
+        return feedback
+
+    raise ValueError(f"AI returned invalid JSON after {MAX_RETRIES} attempts: {last_error}")

@@ -44,18 +44,19 @@ from app.api.progress import router as progress_router
 from app.api.websocket_chat import router as ws_router
 from app.api import writing
 from app.api import listening
-from app.api import feedback                                    # ← NEW
+from app.api import feedback
+from app.api.listening import router as listening_esl_router
 
-
-app.include_router(auth_router,     prefix="/api", tags=["Authentication"])
-app.include_router(lessons_router,  prefix="/api", tags=["Lessons"])
-app.include_router(progress_router, prefix="/api", tags=["Progress"])
-app.include_router(voice_router,    prefix="/api", tags=["Voice Chat"])
-app.include_router(stt_router,      prefix="/api", tags=["Speech-to-Text"])
-app.include_router(ws_router,                      tags=["WebSocket"])
-app.include_router(writing.router,  prefix="/api", tags=["Writing"])
-app.include_router(listening.router,prefix="/api", tags=["Listening"])
-app.include_router(feedback.router, prefix="/api", tags=["Writing Feedback"])  # ← NEW
+app.include_router(auth_router,          prefix="/api", tags=["Authentication"])
+app.include_router(lessons_router,       prefix="/api", tags=["Lessons"])
+app.include_router(progress_router,      prefix="/api", tags=["Progress"])
+app.include_router(voice_router,         prefix="/api", tags=["Voice Chat"])
+app.include_router(stt_router,           prefix="/api", tags=["Speech-to-Text"])
+app.include_router(ws_router,                           tags=["WebSocket"])
+app.include_router(writing.router,       prefix="/api", tags=["Writing"])
+app.include_router(listening.router,     prefix="/api", tags=["Listening"])
+app.include_router(listening_esl_router, prefix="/api", tags=["Listening ESL"])
+app.include_router(feedback.router,      prefix="/api", tags=["Writing Feedback"])
 
 
 @app.get("/")
@@ -95,7 +96,7 @@ def root():
                 "topic_search": "/api/writing/topics/search?q=<keyword>",
                 "stats":        "/api/writing/stats",
             },
-            "writing_feedback": {                              # ← NEW
+            "writing_feedback": {
                 "grade": "/api/writing/feedback/grade",
             },
             "listening": {
@@ -103,6 +104,12 @@ def root():
                 "random": "/api/listening/exercises/random",
                 "by_id":  "/api/listening/exercises/{exercise_id}",
                 "stats":  "/api/listening/stats",
+            },
+            "listening_esl": {
+                "list":               "/api/listen?level=easy|intermediate|difficult",
+                "by_id":              "/api/listen/{listening_id}",
+                "generate_questions": "/api/listen/{listening_id}/generate-questions",
+                "audio_proxy":        "/api/listen/audio-proxy?url=<cdn_url>",
             },
         },
     }
@@ -121,12 +128,14 @@ async def startup_event():
         total_lessons       = db["lessons"].count_documents({})
         total_writing       = db["topicwriting"].count_documents({})
         classified_writing  = db["topicwriting"].count_documents({"topic": {"$exists": True}})
+        total_listening_esl = db["datalistening"].count_documents({})
 
         print(f"MongoDB connected")
         print(f"  Total lessons:            {total_lessons}")
         print(f"  Lessons with short_story: {lessons_with_short}")
         print(f"  Writing questions:        {total_writing}")
         print(f"  Writing classified:       {classified_writing}")
+        print(f"  Listening ESL items:      {total_listening_esl}")
 
         if lessons_with_short == 0:
             print("     No short stories found! Run: python summarize_lessons_simple.py")
@@ -134,6 +143,8 @@ async def startup_event():
             print("     No writing questions! Run: python import_quora.py")
         elif classified_writing < total_writing:
             print(f"     {total_writing - classified_writing} questions not classified! Run: python classify_topics.py")
+        if total_listening_esl == 0:
+            print("     No ESL listening data found! Check datalistening collection.")
 
     except Exception as e:
         print(" init_db raised:", e)
@@ -171,13 +182,18 @@ async def startup_event():
     print("      GET    /api/writing/topics")
     print("      GET    /api/writing/topics/search?q=<keyword>")
     print("      GET    /api/writing/stats")
-    print("\n   Writing Feedback (AI):")                       # ← NEW
-    print("      POST   /api/writing/feedback/grade")         # ← NEW
+    print("\n   Writing Feedback (AI):")
+    print("      POST   /api/writing/feedback/grade")
     print("\n   Listening:")
     print("      GET    /api/listening/exercises")
     print("      GET    /api/listening/exercises/random")
     print("      GET    /api/listening/exercises/{id}")
     print("      GET    /api/listening/stats")
+    print("\n   Listening ESL (AI-powered):")
+    print("      GET    /api/listen?level=easy|intermediate|difficult")
+    print("      GET    /api/listen/{listening_id}")
+    print("      POST   /api/listen/{listening_id}/generate-questions")
+    print("      GET    /api/listen/audio-proxy?url=<cdn_url>")
     print("=" * 70 + "\n")
 
 
