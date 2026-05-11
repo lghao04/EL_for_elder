@@ -76,6 +76,10 @@ class LessonService:
         q = self._build_query(mongo_id_or_custom_id)
         doc = self.col.find_one(q, {"questions": 1})
         qs = doc.get("questions", []) if doc else []
+
+        print(f"🔍 questions raw type: {type(qs)}, len: {len(qs)}")
+        for i, qitem in enumerate(qs):
+            print(f"  [{i}] type={type(qitem).__name__}, value={repr(qitem)[:80]}")
         
         # Normalize answer field to int if it's stored as string or nested
         normalized = []

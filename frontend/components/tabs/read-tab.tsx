@@ -3,34 +3,42 @@
 import Link from "next/link"
 import { useState, useEffect } from "react"
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
 
 interface ReadingLesson {
   id: string
-  completed?: boolean
 }
 
-interface Progress {
-  lesson_id: string
-  best_score: number
+interface ExerciseRecord {
+  exercise_id: string
   total_attempts: number
+  counted_attempts: number
+  best_score: number       // 0-100 (normalized)
+  best_raw: number         // số câu đúng thực tế
+  score_locked: boolean
 }
 
-interface ProgressMap {
-  [lessonId: string]: Progress
+interface RecordMap {
+  [exerciseId: string]: ExerciseRecord
+}
+
+function getToken(): string | null {
+  return localStorage.getItem("access_token") || localStorage.getItem("token")
+}
+
+function authHeader(token: string) {
+  return { Authorization: `Bearer ${token}` }
 }
 
 export default function ReadTab() {
-  const [lessons, setLessons] = useState<ReadingLesson[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [lessons, setLessons]       = useState<ReadingLesson[]>([])
+  const [recordMap, setRecordMap]   = useState<RecordMap>({})
+  const [loading, setLoading]       = useState(true)
+  const [error, setError]           = useState<string | null>(null)
 
-  // ✅ thêm progress state
-  const [progressMap, setProgressMap] = useState<ProgressMap>({})
-
-  // 🔥 giữ nguyên fetch lessons
+  // ── Fetch danh sách lesson (giữ nguyên) ──────────────────────────────────
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/api/lessons")
+    fetch(`${API}/lessons`)
       .then((res) => {
         if (!res.ok) throw new Error("Failed to fetch lessons")
         return res.json()
@@ -46,55 +54,42 @@ export default function ReadTab() {
       })
   }, [])
 
-  // ✅ thêm fetch progress (copy từ listening, rút gọn)
-  const fetchProgress = async () => {
+  // ── Fetch records mới (thay thế /progress/all) ────────────────────────────
+  const fetchRecords = async () => {
+    const token = getToken()
+    if (!token) return
     try {
-      const token = localStorage.getItem("token")
-      if (!token) return
-
-      const res = await fetch(`${API_BASE_URL}/progress/all`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+      // GET /api/users/me/records?skill=reading — lấy tất cả bài reading 1 lần
+      const res = await fetch(`${API}/users/me/records?skill=reading`, {
+        headers: authHeader(token),
       })
+      if (!res.ok) return
 
-      if (res.ok) {
-        const data = await res.json()
-
-        const map: ProgressMap = {}
-        data.progress.forEach((p: Progress) => {
-          map[p.lesson_id] = p
-        })
-
-        setProgressMap(map)
-      }
+      const data = await res.json()
+      const map: RecordMap = {}
+      ;(data.records || []).forEach((r: ExerciseRecord) => {
+        map[r.exercise_id] = r
+      })
+      setRecordMap(map)
     } catch (err) {
-      console.error("Error fetching progress:", err)
+      console.error("Error fetching records:", err)
     }
   }
 
+  useEffect(() => { fetchRecords() }, [])
+
+  // Refresh khi user quay lại tab
   useEffect(() => {
-    fetchProgress()
+    const handler = () => { if (!document.hidden) fetchRecords() }
+    document.addEventListener("visibilitychange", handler)
+    return () => document.removeEventListener("visibilitychange", handler)
   }, [])
 
-  // 🔥 refresh khi quay lại tab
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        fetchProgress()
-      }
-    }
-
-    document.addEventListener("visibilitychange", handleVisibilityChange)
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange)
-  }, [])
-
-  // ===== UI =====
-
+  // ── UI states ─────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-400" />
       </div>
     )
   }
@@ -104,10 +99,8 @@ export default function ReadTab() {
       <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
         <p className="text-red-600 font-medium">❌ Error loading lessons</p>
         <p className="text-sm text-red-500 mt-2">{error}</p>
-        <button
-          onClick={() => window.location.reload()}
-          className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-        >
+        <button onClick={() => window.location.reload()}
+          className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
           Retry
         </button>
       </div>
@@ -123,87 +116,93 @@ export default function ReadTab() {
     )
   }
 
+  // ── List ──────────────────────────────────────────────────────────────────
   return (
-  <div className="space-y-4">
-    <div className="space-y-3">
-      {lessons.map((lesson, index) => {
-        const progress = progressMap[lesson.id]
+    <div className="space-y-4">
+      <div className="space-y-3">
+        {lessons.map((lesson, index) => {
+          const record       = recordMap[lesson.id]
+          const hasProgress  = !!record && record.total_attempts > 0
+          // best_score là 0-100, dùng trực tiếp để hiển thị %
+          const bestPct      = record?.best_score ?? 0
+          // best_raw = số câu đúng thực tế (từ ScoreService)
+          const bestRaw      = record?.best_raw ?? 0
+          const attempts     = record?.total_attempts ?? 0
+          const scoreLocked  = record?.score_locked ?? false
+          // Coi là "hoàn thành" khi đạt 100%
+          const isPerfect    = bestPct >= 100
 
-        const bestScore = progress?.best_score || 0
-        const totalAttempts = progress?.total_attempts || 0
-        const hasProgress = !!progress
-        const hasCompleted = bestScore === 4 // hoặc giữ lesson.completed nếu bạn muốn
+          return (
+            <Link key={lesson.id} href={`/read?id=${lesson.id}`}>
+              <button className="w-full bg-white rounded-2xl p-6 shadow-lg hover:shadow-xl transition border-4 border-orange-200 flex flex-col hover:scale-105 cursor-pointer relative">
 
-        return (
-          <Link key={lesson.id} href={`/read?id=${lesson.id}`}>
-            <button className="w-full bg-white rounded-2xl p-6 shadow-lg hover:shadow-xl transition border-4 border-orange-200 flex flex-col hover:scale-105 cursor-pointer relative">
+                {/* Perfect badge */}
+                {isPerfect && (
+                  <div className="absolute -top-2 -right-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-full px-4 py-2 shadow-lg border-2 border-white flex items-center gap-2 z-10">
+                    <span className="text-lg">✓</span>
+                    <div className="flex flex-col items-start">
+                      <span className="text-xs font-semibold">Perfect</span>
+                      <span className="text-sm font-bold">100%</span>
+                    </div>
+                  </div>
+                )}
 
-              {/* ✅ Badge giống Listening */}
-              {hasCompleted && (
-                <div className="absolute -top-2 -right-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-full px-4 py-2 shadow-lg border-2 border-white flex items-center gap-2 z-10">
-                  <span className="text-lg">✓</span>
-                  <div className="flex flex-col items-start">
-                    <span className="text-xs font-semibold">Perfect</span>
-                    <span className="text-sm font-bold">4/4</span>
+                {/* Score locked badge */}
+                {scoreLocked && !isPerfect && (
+                  <div className="absolute -top-2 -right-2 bg-gray-400 text-white rounded-full px-3 py-1.5 shadow-lg border-2 border-white text-xs font-semibold z-10">
+                    🔒 Locked
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between w-full">
+                  <div className="flex-1 text-left">
+                    <h3 className="text-2xl font-bold text-orange-700">
+                      Lesson {index + 1}
+                    </h3>
+
+                    {hasProgress ? (
+                      <div className="mt-3 space-y-2">
+                        {/* Score */}
+                        <div className="flex items-center gap-4 text-sm">
+                          <span className="font-semibold text-orange-600">
+                            🏆 Best: {bestPct.toFixed(0)}%
+                          </span>
+                          {scoreLocked && (
+                            <span className="text-xs text-gray-400">
+                              (điểm đã khoá)
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Attempts + progress bar */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-xs text-orange-600">
+                            <span>{attempts} attempt{attempts > 1 ? "s" : ""}</span>
+                            <span>{record.counted_attempts}/3 scored</span>
+                          </div>
+                          <div className="w-full bg-orange-100 rounded-full h-2">
+                            <div
+                              className={`h-2 rounded-full transition-all duration-300 ${
+                                bestPct >= 100 ? "bg-orange-500"
+                                : bestPct >= 75  ? "bg-orange-400"
+                                : bestPct >= 50  ? "bg-yellow-400"
+                                : "bg-red-400"
+                              }`}
+                              style={{ width: `${bestPct}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm text-orange-500">Not started yet</p>
+                    )}
                   </div>
                 </div>
-              )}
-
-              {/* MAIN */}
-              <div className="flex items-center justify-between w-full">
-                <div className="flex-1 text-left">
-                  <h3 className="text-2xl font-bold text-orange-700">
-                    Lesson {index + 1}
-                  </h3>
-
-                  {/* Progress */}
-                  {hasProgress ? (
-                    <div className="mt-3 space-y-2">
-
-                      {/* Score */}
-                      <div className="flex items-center gap-4 text-sm">
-                        <span className="font-semibold text-orange-600">
-                          🏆 Best: {bestScore}/4
-                        </span>
-                      </div>
-
-                      {/* Attempts + Progress bar */}
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-xs text-orange-600">
-                          <span>
-                            {totalAttempts} attempt{totalAttempts > 1 ? "s" : ""}
-                          </span>
-                          <span>{Math.round((bestScore / 4) * 100)}%</span>
-                        </div>
-
-                        <div className="w-full bg-orange-100 rounded-full h-2">
-                          <div
-                            className={`h-2 rounded-full transition-all duration-300 ${
-                              bestScore === 4
-                                ? "bg-orange-500"
-                                : bestScore === 3
-                                ? "bg-orange-400"
-                                : bestScore === 2
-                                ? "bg-yellow-400"
-                                : "bg-red-400"
-                            }`}
-                            style={{ width: `${(bestScore / 4) * 100}%` }}
-                          ></div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-sm text-orange-500">
-                      Not started yet
-                    </p>
-                  )}
-                </div>
-              </div>
-            </button>
-          </Link>
-        )
-      })}
+              </button>
+            </Link>
+          )
+        })}
+      </div>
     </div>
-  </div>
-)
+  )
 }

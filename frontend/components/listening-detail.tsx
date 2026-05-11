@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { Headphones, Volume2, Play, Pause, RotateCcw, ChevronRight } from "lucide-react"
+import { Headphones, Volume2, Play, Pause, ChevronRight, Trophy, Lock } from "lucide-react"
 import Header from "@/components/header"
+import { STREAK_UPDATED } from "@/constants/events"
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
 
@@ -30,6 +31,45 @@ export interface ListeningItem {
   generated_questions?: GeneratedQuestion[]
 }
 
+// ── Kiểu dữ liệu từ API backend ──────────────────────────────────────────────
+
+interface AttemptRecord {
+  total_attempts: number
+  counted_attempts: number
+  max_counted_attempts: number
+  best_score: number
+  best_raw: number
+  last_score: number
+  score_locked: boolean
+  first_attempt_at: string | null
+  last_attempt_at: string | null
+}
+
+interface SubmitResult {
+  status: string
+  skill: string
+  score: {
+    normalized: number
+    raw: number
+    max_raw: number
+    details: Record<string, number>
+    attempt_number: number
+    score_counted: boolean
+    message: string
+  }
+  record: AttemptRecord
+  streak: {
+    counted: boolean
+    current: number | null
+    is_new_day: boolean | null
+  }
+  streak_bonus: {
+    awarded: boolean
+    points: number
+    new_total: number | null
+  }
+}
+
 interface ListeningDetailProps {
   item: ListeningItem
   genLoading: boolean
@@ -53,6 +93,11 @@ export default function ListeningDetail({ item, genLoading }: ListeningDetailPro
   const [submitted, setSubmitted] = useState(false)
   const [showScorePopup, setShowScorePopup] = useState(false)
 
+  // ── Submit state ──────────────────────────────────────────────────────────
+  const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null)
+  const [submitLoading, setSubmitLoading] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+
   const gqs = item.generated_questions ?? []
   const currentQuestion = gqs[currentQuestionIndex]
 
@@ -60,20 +105,13 @@ export default function ListeningDetail({ item, genLoading }: ListeningDetailPro
   useEffect(() => {
     return () => { audioRef.current?.pause(); audioRef.current = null }
   }, [])
-  useEffect(() => {
-  if (showScorePopup && audioRef.current) {
-    audioRef.current.pause()
-    setIsPlaying(false)
-  }
-}, [showScorePopup])
 
-    const stopAudio = () => {
-    if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current.currentTime = 0
+  useEffect(() => {
+    if (showScorePopup && audioRef.current) {
+      audioRef.current.pause()
+      setIsPlaying(false)
     }
-    setIsPlaying(false)
-    }
+  }, [showScorePopup])
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -84,6 +122,14 @@ export default function ListeningDetail({ item, genLoading }: ListeningDetailPro
   }, [showScorePopup])
 
   // ── Audio helpers ─────────────────────────────────────────────────────────
+  const stopAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+    }
+    setIsPlaying(false)
+  }
+
   const proxyUrl = (url: string) =>
     `${API}/listen/audio-proxy?url=${encodeURIComponent(url)}`
 
@@ -141,32 +187,90 @@ export default function ListeningDetail({ item, genLoading }: ListeningDetailPro
     setSelectedAnswers((prev) => ({ ...prev, [currentQuestionIndex]: option }))
   }
 
+  const getScore = () =>
+    gqs.filter((q, i) => selectedAnswers[i]?.charAt(0) === q.answer).length
+
+  // ── Submit to backend ─────────────────────────────────────────────────────
+  const submitToBackend = async (correctCount: number) => {
+    const token = localStorage.getItem("access_token") || localStorage.getItem("token")
+    if (!token) return  // không có auth thì bỏ qua
+
+    setSubmitLoading(true)
+    setSubmitError(null)
+
+    try {
+      const res = await fetch(`${API}/listen/${item.id}/submit`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          user_id: getUserIdFromToken(token),
+          correct_answers: correctCount,
+          total_questions: gqs.length,
+        }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail || "Submit thất bại")
+      }
+
+      const data: SubmitResult = await res.json()
+      setSubmitResult(data)
+
+      // Dispatch STREAK_UPDATED nếu streak có thay đổi
+      if (data.streak.counted && data.streak.current !== null) {
+        window.dispatchEvent(
+          new CustomEvent(STREAK_UPDATED, {
+            detail: {
+              current_streak: data.streak.current,
+              // RightSidebar sẽ fetch lại longest/total nếu cần
+            },
+          })
+        )
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Lỗi không xác định"
+      setSubmitError(msg)
+      console.error("❌ Submit error:", msg)
+    } finally {
+      setSubmitLoading(false)
+    }
+  }
+
+  /** Lấy user_id từ JWT payload (base64 decode phần 2) */
+  const getUserIdFromToken = (token: string): string => {
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1]))
+      return payload.sub || payload.user_id || payload.id || ""
+    } catch {
+      return ""
+    }
+  }
+
   const handleNext = () => {
     if (currentQuestionIndex < gqs.length - 1) {
-        setCurrentQuestionIndex(currentQuestionIndex + 1)
+      setCurrentQuestionIndex(currentQuestionIndex + 1)
     } else {
-        // ✅ STOP AUDIO HERE
-        if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current.currentTime = 0 // optional: reset về đầu
-        }
-        setIsPlaying(false)
-
-        setSubmitted(true)
-        setShowScorePopup(true)
+      // Câu cuối → dừng audio, tính điểm, gọi API
+      stopAudio()
+      const correctCount = getScore()  // tính trước khi set submitted
+      setSubmitted(true)
+      setShowScorePopup(true)
+      submitToBackend(correctCount)
     }
-    }
-  
+  }
 
   const handleRetry = () => {
     setSelectedAnswers({})
     setSubmitted(false)
     setShowScorePopup(false)
     setCurrentQuestionIndex(0)
+    setSubmitResult(null)
+    setSubmitError(null)
   }
-
-  const getScore = () =>
-    gqs.filter((q, i) => selectedAnswers[i]?.charAt(0) === q.answer).length
 
   const score = submitted ? getScore() : 0
 
@@ -186,81 +290,149 @@ export default function ListeningDetail({ item, genLoading }: ListeningDetailPro
     return "bg-gray-50 text-gray-400 border-gray-100"
   }
 
-  // ── Results screen ────────────────────────────────────────────────────────
-  
+  // ── Score Popup content ───────────────────────────────────────────────────
+  const renderScorePopup = () => {
+    const record = submitResult?.record
+    const scoreInfo = submitResult?.score
+    const streakInfo = submitResult?.streak
+    const bonusInfo = submitResult?.streak_bonus
+
+    return (
+      <div
+        className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+        onClick={() => setShowScorePopup(false)}
+      >
+        <div
+          className="bg-white rounded-3xl p-8 md:p-10 max-w-md w-full text-center shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className="text-7xl block mb-4">
+            {score === gqs.length ? "🎉" : "👏"}
+          </span>
+
+          <h2 className="text-3xl font-bold text-gray-800 mb-2">Quiz Complete!</h2>
+
+          {/* Điểm bài này */}
+          <div className="bg-gradient-to-br from-pink-500 to-orange-500 rounded-2xl p-5 mb-4">
+            <p className="text-white text-5xl font-bold">{score}/{gqs.length}</p>
+            <p className="text-white/90 text-xl mt-1">
+              {score === gqs.length ? "Perfect!" : `${Math.round((score / gqs.length) * 100)}%`}
+            </p>
+          </div>
+
+          {/* Thông tin attempt từ backend */}
+          {submitLoading && (
+            <div className="flex items-center justify-center gap-2 text-gray-400 text-sm mb-4">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-pink-400" />
+              <span>Đang lưu kết quả...</span>
+            </div>
+          )}
+
+          {submitError && (
+            <p className="text-red-400 text-sm mb-4">⚠️ {submitError}</p>
+          )}
+
+          {record && !submitLoading && (
+            <div className="space-y-3 mb-5 text-left">
+
+              {/* Thông báo attempt */}
+              <div className={`rounded-xl px-4 py-3 text-sm font-medium flex items-start gap-2
+                ${scoreInfo?.score_counted
+                  ? "bg-green-50 text-green-700 border border-green-200"
+                  : "bg-orange-50 text-orange-700 border border-orange-200"}`}
+              >
+                <span className="mt-0.5">{scoreInfo?.score_counted ? "✅" : "ℹ️"}</span>
+                <span>{scoreInfo?.message}</span>
+              </div>
+
+              {/* Best score + attempts */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-gray-50 rounded-xl p-3 text-center border border-gray-100">
+                  <p className="text-xs text-gray-500 mb-1">Best Score</p>
+                  <p className="text-xl font-bold text-gray-800">{record.best_score.toFixed(0)}%</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-3 text-center border border-gray-100">
+                  <p className="text-xs text-gray-500 mb-1">Attempts</p>
+                  <p className="text-xl font-bold text-gray-800">{record.total_attempts}</p>
+                </div>
+                <div className={`rounded-xl p-3 text-center border
+                  ${record.score_locked
+                    ? "bg-red-50 border-red-200"
+                    : "bg-blue-50 border-blue-100"}`}
+                >
+                  <p className="text-xs text-gray-500 mb-1">Scored</p>
+                  <p className="text-xl font-bold text-gray-800">
+                    {record.counted_attempts}/{record.max_counted_attempts}
+                  </p>
+                </div>
+              </div>
+
+              {/* Score locked badge */}
+              {record.score_locked && (
+                <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-2 text-sm text-red-600">
+                  <Lock className="w-4 h-4 flex-shrink-0" />
+                  <span>Điểm đã khoá — bài này không còn tính điểm nữa</span>
+                </div>
+              )}
+
+              {/* Streak info */}
+              {streakInfo?.counted && (
+                <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-xl px-4 py-2 text-sm text-orange-700">
+                  <span>🔥</span>
+                  <span>
+                    Streak: <strong>{streakInfo.current} ngày</strong>
+                    {streakInfo.is_new_day && " — ngày mới!"}
+                  </span>
+                </div>
+              )}
+
+              {/* Streak bonus */}
+              {bonusInfo?.awarded && (
+                <div className="flex items-center gap-2 bg-yellow-50 border border-yellow-300 rounded-xl px-4 py-2 text-sm text-yellow-700 font-semibold">
+                  <Trophy className="w-4 h-4 flex-shrink-0" />
+                  <span>+{bonusInfo.points} điểm thưởng streak! 🎊</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div className="flex gap-3">
+            <button
+              onClick={handleRetry}
+              disabled={record?.score_locked}
+              className={`flex-1 border-2 px-5 py-3 rounded-2xl font-bold text-base transition
+                ${record?.score_locked
+                  ? "border-gray-200 text-gray-300 cursor-not-allowed bg-gray-50"
+                  : "border-pink-400 text-pink-500 hover:bg-pink-50 bg-white"}`}
+            >
+              {record?.score_locked ? "🔒 Locked" : "Try Again"}
+            </button>
+            <button
+              onClick={() => { stopAudio(); router.back() }}
+              className="flex-1 bg-orange-500 hover:bg-orange-600 text-white px-5 py-3 rounded-2xl font-bold text-base transition"
+            >
+              Quit
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   // ── Main UI ───────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-100 via-orange-50 to-yellow-100">
       <Header userAvatar="👧" />
 
-      {/* Score Popup */}
-      {showScorePopup && (
-  <div
-    className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-    onClick={() => setShowScorePopup(false)}
-  >
-    <div
-      className="bg-white rounded-3xl p-8 md:p-12 max-w-md w-full text-center shadow-2xl"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <span className="text-7xl block mb-6">
-        {score === gqs.length ? "🎉" : "👏"}
-      </span>
-
-      <h2 className="text-4xl font-bold text-gray-800 mb-4">
-        Quiz Complete!
-      </h2>
-
-      <p className="text-gray-600 text-xl mb-6">Your Score</p>
-
-      <div className="bg-gradient-to-br from-pink-500 to-orange-500 rounded-2xl p-6 mb-8">
-        <p className="text-white text-6xl font-bold">
-          {score}/{gqs.length}
-        </p>
-        <p className="text-white text-2xl mt-2">
-          {score === gqs.length
-            ? "Perfect!"
-            : `${Math.round((score / gqs.length) * 100)}%`}
-        </p>
-      </div>
-
-      {/* ✅ ACTION BUTTONS */}
-      <div className="flex gap-4">
-        {/* Try Again */}
-        <button
-          onClick={() => {
-            handleRetry()
-          }}
-          className="flex-1 bg-white border-2 border-pink-400 text-pink-500 px-6 py-4 rounded-2xl font-bold text-lg hover:bg-pink-50 transition"
-        >
-          Try Again
-        </button>
-
-        {/* Quit */}
-        <button
-          onClick={() => {
-            stopAudio()
-            router.back()
-          }}
-          className="flex-1 bg-orange-500 hover:bg-orange-600 text-white px-6 py-4 rounded-2xl font-bold text-lg transition"
-        >
-          Quit
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+      {showScorePopup && renderScorePopup()}
 
       <div className="p-6">
         <div className="max-w-2xl mx-auto space-y-6">
 
           {/* Back */}
           <button
-            onClick={() => {
-              stopAudio();
-              router.back();
-            }}
+            onClick={() => { stopAudio(); router.back() }}
             className="bg-white px-6 py-3 rounded-xl font-bold text-gray-700 hover:bg-gray-100 transition shadow-lg border-2 border-orange-200"
           >
             ← Back to Dashboard
@@ -273,8 +445,6 @@ export default function ListeningDetail({ item, genLoading }: ListeningDetailPro
                 <h1 className="text-2xl font-bold text-gray-800 leading-tight">{item.title}</h1>
               </div>
             </div>
-            <div className="flex gap-2 flex-wrap mt-3">
-            </div>
           </div>
 
           {/* Audio Player */}
@@ -284,7 +454,6 @@ export default function ListeningDetail({ item, genLoading }: ListeningDetailPro
                 <Headphones className="w-5 h-5 text-pink-500" />
                 <p className="font-bold text-gray-800 text-sm">Listen to the story</p>
               </div>
-             
 
               <div className="flex items-center gap-4">
                 <button
@@ -342,8 +511,6 @@ export default function ListeningDetail({ item, genLoading }: ListeningDetailPro
               ))}
             </div>
           </div>
-
-        
 
           {/* Quiz */}
           {genLoading && (

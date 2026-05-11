@@ -1,10 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 import cloudinary
 import cloudinary.uploader
 import os
+from app.services.score_service import ScoreService
+from app.services.streak_service import StreakService
+from typing import Optional
+from fastapi import Query
+from typing import Optional
 
 from app.db import get_db
 from app.services.auth_service import (
@@ -202,3 +207,54 @@ async def update_user_profile_image(
     if not success:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
     return {"success": True, "message": message, "data": updated}
+
+@router.get("/users/me/dashboard")
+async def get_my_dashboard(
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Streak + score + rank trong 1 request cho sidebar."""
+    user_id = current_user["user_id"]
+    score_svc  = ScoreService(db)
+    streak_svc = StreakService(db)
+ 
+    score_summary = score_svc.get_user_score_summary(user_id)
+    streak_info   = streak_svc.get_streak(user_id)
+    rank_info     = score_svc.get_user_rank(user_id)
+ 
+    return {
+        "user_id":            user_id,
+        "total_score":        score_summary["total_score"],
+        "streak_bonus_total": score_summary["streak_bonus_total"],
+        "rank":               rank_info["rank"],
+        "streak": {
+            "current":           streak_info["current_streak"],
+            "longest":           streak_info["longest_streak"],
+            "total_active_days": streak_info["total_active_days"],
+            "last_active_date":  streak_info["last_active_date"],
+        },
+        "skill_scores": score_summary["skill_totals"],
+    }
+ 
+ 
+@router.get("/users/leaderboard")
+async def get_leaderboard(
+    limit: int = Query(5, ge=1, le=50),
+    db=Depends(get_db),
+):
+    """Top N user theo tổng điểm. Không cần auth."""
+    return ScoreService(db).get_leaderboard(limit=limit)
+ 
+@router.get("/users/me/records")
+async def get_my_records(
+    skill: Optional[str] = Query(None, description="listening | reading | writing"),
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Tất cả bài test đã làm, lọc theo skill nếu cần."""
+    records = ScoreService(db).get_all_exercise_records(
+        user_id=current_user["user_id"],
+        skill=skill,
+    )
+    return {"total": len(records), "records": records}
+ 
