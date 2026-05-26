@@ -74,7 +74,7 @@ def proxy_audio(url: str = Query(..., description="Audio URL từ CDN ESL Lab"))
 def list_listening(
     level: str = Query(None, description="easy | intermediate | difficult"),
     skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(100, ge=1, le=100),
     db=Depends(get_db),
 ):
     items = get_all_listening(db, level=level, skip=skip, limit=limit)

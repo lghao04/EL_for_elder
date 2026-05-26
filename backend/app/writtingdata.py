@@ -1,6 +1,6 @@
 # app/import_quora.py
 # Load dataset toughdata/quora-question-answer-dataset từ HuggingFace,
-# chỉ lấy cột `question`, tự gắn id, lưu vào MongoDB collection `topicwriting`.
+# `topicwriting`.
 #
 # Ví dụ document sau khi import:
 #   { "id": "quora_0", "question": "Why whenever I get in the shower..." }

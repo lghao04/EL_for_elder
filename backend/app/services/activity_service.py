@@ -31,9 +31,7 @@ class ActivityService:
         self.streak_svc = StreakService(db)
         self.score_svc = ScoreService(db)
 
-    # ==================================================================
-    # SUBMIT
-    # ==================================================================
+   
 
     def submit_listening(
         self,
@@ -88,9 +86,7 @@ class ActivityService:
 
         return self._build_response("writing", score_result, streak_result, bonus_result)
 
-    # ==================================================================
-    # READ
-    # ==================================================================
+  
 
     def get_dashboard(self, user_id: str) -> Dict:
         """Dữ liệu đầy đủ cho trang Dashboard cá nhân."""
@@ -138,9 +134,6 @@ class ActivityService:
         days = self.streak_svc.get_calendar(user_id, year, month)
         return {"user_id": user_id, "year": year, "month": month, "active_days": days}
 
-    # ==================================================================
-    # INTERNAL
-    # ==================================================================
 
     @staticmethod
     def _build_response(

@@ -1,4 +1,5 @@
 # app/importdata_librispeech.py
+# không dùng tới
 import requests
 from db import init_db, close_db, get_db
 

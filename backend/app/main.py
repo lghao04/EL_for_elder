@@ -43,9 +43,21 @@ from app.api.lesson import router as lessons_router
 from app.api.progress import router as progress_router
 from app.api.websocket_chat import router as ws_router
 from app.api import writing
+from app.api import listening
+from app.api import feedback                                   
 from app.api import feedback
-from app.api.listening import router as listening_esl_router  # prefix="/listen" defined in router
+from app.api.listening import router as listening_esl_router
 
+
+app.include_router(auth_router,     prefix="/api", tags=["Authentication"])
+app.include_router(lessons_router,  prefix="/api", tags=["Lessons"])
+app.include_router(progress_router, prefix="/api", tags=["Progress"])
+app.include_router(voice_router,    prefix="/api", tags=["Voice Chat"])
+app.include_router(stt_router,      prefix="/api", tags=["Speech-to-Text"])
+app.include_router(ws_router,                      tags=["WebSocket"])
+app.include_router(writing.router,  prefix="/api", tags=["Writing"])
+app.include_router(listening.router,prefix="/api", tags=["Listening"])
+app.include_router(feedback.router, prefix="/api", tags=["Writing Feedback"]) 
 app.include_router(auth_router,          prefix="/api", tags=["Authentication"])
 app.include_router(lessons_router,       prefix="/api", tags=["Lessons"])
 app.include_router(progress_router,      prefix="/api", tags=["Progress"])
@@ -53,6 +65,7 @@ app.include_router(voice_router,         prefix="/api", tags=["Voice Chat"])
 app.include_router(stt_router,           prefix="/api", tags=["Speech-to-Text"])
 app.include_router(ws_router,                           tags=["WebSocket"])
 app.include_router(writing.router,       prefix="/api", tags=["Writing"])
+app.include_router(listening.router,     prefix="/api", tags=["Listening"])
 app.include_router(listening_esl_router, prefix="/api", tags=["Listening ESL"])
 app.include_router(feedback.router,      prefix="/api", tags=["Writing Feedback"])
 
@@ -64,72 +77,55 @@ def root():
         "version": "1.0.0",
         "endpoints": {
             "auth": {
-                "register":  "POST /api/auth/register",
-                "login":     "POST /api/auth/login",
-                "me":        "GET  /api/auth/me",
-                "protected": "GET  /api/auth/protected",
-            },
-            "profile": {
-                "upload_image": "POST  /api/profile/upload-image",
-                "update":       "PUT   /api/profile",
-                "update_name":  "PATCH /api/profile/name",
-                "update_image": "PATCH /api/profile/image",
-            },
-            "users": {
-                "dashboard":  "GET /api/users/me/dashboard",
-                "leaderboard":"GET /api/users/leaderboard?limit=5",
-                "records":    "GET /api/users/me/records?skill=listening|reading|writing",
+                "register": "/api/auth/register",
+                "login":    "/api/auth/login",
+                "me":       "/api/auth/me",
             },
             "lessons": {
-                "list":     "GET  /api/lessons?limit=50",
-                "detail":   "GET  /api/lessons/{lesson_id}",
-                "story":    "GET  /api/lessons/{lesson_id}/story",
-                "questions":"GET  /api/lessons/{lesson_id}/questions",
-                "submit":   "POST /api/lessons/{lesson_id}/submit",
-                "record":   "GET  /api/lessons/{lesson_id}/record/{user_id}",
-                "history":  "GET  /api/lessons/{lesson_id}/history/{user_id}",
+                "get_lesson":    "/api/lessons/{lesson_id}?use_short=true",
+                "list_lessons":  "/api/lessons?limit=50",
+                "get_story":     "/api/lessons/{lesson_id}/story",
+                "get_questions": "/api/lessons/{lesson_id}/questions",
             },
             "progress": {
-                "save":         "POST   /api/progress",
-                "get_all":      "GET    /api/progress/all",
-                "stats":        "GET    /api/progress/stats",
-                "streak":       "GET    /api/progress/streak",
-                "calendar":     "GET    /api/progress/calendar/{year}/{month}",
-                "lesson":       "GET    /api/progress/lesson/{lesson_id}",
-                "delete_lesson":"DELETE /api/progress/lesson/{lesson_id}",
+                "record_completion": "/api/progress/complete",
+                "get_all_progress":  "/api/progress/all",
+                "get_stats":         "/api/progress/stats",
+                "leaderboard":       "/api/progress/leaderboard",
             },
-            "voice_chat": "POST /api/voice-chat",
-            "stt": {
-                "transcribe": "POST /api/speech-to-text",
-                "languages":  "GET  /api/supported-languages",
-            },
+            "voice_chat": "/api/voice-chat",
+            "stt":        "/api/speech-to-text",
             "websocket": {
                 "chat":   "/ws/chat/{user_id}",
                 "health": "/ws/health",
             },
             "writing": {
-                "list":         "GET /api/writing/questions?skip=0&limit=20",
-                "random":       "GET /api/writing/questions/random",
-                "by_id":        "GET /api/writing/questions/{question_id}",
-                "topics":       "GET /api/writing/topics",
-                "topic_search": "GET /api/writing/topics/search?q=<keyword>",
-                "stats":        "GET /api/writing/stats",
+                "list":         "/api/writing/questions?skip=0&limit=20",
+                "random":       "/api/writing/questions/random",
+                "by_id":        "/api/writing/questions/{question_id}",
+                "topics":       "/api/writing/topics",
+                "topic_search": "/api/writing/topics/search?q=<keyword>",
+                "stats":        "/api/writing/stats",
             },
+            "writing_feedback": {                              # ← NEW
             "writing_feedback": {
-                "grade": "POST /api/writing/feedback/grade",
+                "grade": "/api/writing/feedback/grade",
+            },
+            "listening": {
+                "list":   "/api/listening/exercises",
+                "random": "/api/listening/exercises/random",
+                "by_id":  "/api/listening/exercises/{exercise_id}",
+                "stats":  "/api/listening/stats",
             },
             "listening_esl": {
-                "list":               "GET  /api/listen?level=easy|intermediate|difficult",
-                "by_id":              "GET  /api/listen/{listening_id}",
-                "generate_questions": "POST /api/listen/{listening_id}/generate-questions",
-                "submit":             "POST /api/listen/{listening_id}/submit",
-                "record":             "GET  /api/listen/{listening_id}/record/{user_id}",
-                "history":            "GET  /api/listen/{listening_id}/history/{user_id}",
-                "audio_proxy":        "GET  /api/listen/audio-proxy?url=<cdn_url>",
+                "list":               "/api/listen?level=easy|intermediate|difficult",
+                "by_id":              "/api/listen/{listening_id}",
+                "generate_questions": "/api/listen/{listening_id}/generate-questions",
+                "audio_proxy":        "/api/listen/audio-proxy?url=<cdn_url>",
             },
         },
     }
-
+    }
 
 @app.on_event("startup")
 async def startup_event():
@@ -180,35 +176,14 @@ async def startup_event():
     print("      POST   /api/auth/register")
     print("      POST   /api/auth/login")
     print("      GET    /api/auth/me (protected)")
-    print("\n   Profile:")
-    print("      POST   /api/profile/upload-image")
-    print("      PUT    /api/profile")
-    print("      PATCH  /api/profile/name")
-    print("      PATCH  /api/profile/image")
-    print("\n   Users:")
-    print("      GET    /api/users/me/dashboard")
-    print("      GET    /api/users/leaderboard?limit=5")
-    print("      GET    /api/users/me/records?skill=listening|reading|writing")
     print("\n   Lessons:")
-    print("      GET    /api/lessons?limit=50")
-    print("      GET    /api/lessons/{id}")
+    print("      GET    /api/lessons/{id}?use_short=true (default)")
     print("      GET    /api/lessons/{id}/story")
     print("      GET    /api/lessons/{id}/questions")
-    print("      POST   /api/lessons/{id}/submit")
-    print("      GET    /api/lessons/{id}/record/{user_id}")
-    print("      GET    /api/lessons/{id}/history/{user_id}")
-    print("\n   Progress:")
-    print("      POST   /api/progress")
-    print("      GET    /api/progress/all")
-    print("      GET    /api/progress/stats")
-    print("      GET    /api/progress/streak")
-    print("      GET    /api/progress/calendar/{year}/{month}")
-    print("      GET    /api/progress/lesson/{lesson_id}")
-    print("      DELETE /api/progress/lesson/{lesson_id}")
-    print("\n   Voice & STT:")
+    print("      GET    /api/lessons?limit=50")
+    print("\n   Voice & TTS:")
     print("      POST   /api/voice-chat")
     print("      POST   /api/speech-to-text")
-    print("      GET    /api/supported-languages")
     print("\n   WebSocket (Realtime):")
     print("      WS     /ws/chat/{user_id}")
     print("      GET    /ws/health")
@@ -219,15 +194,19 @@ async def startup_event():
     print("      GET    /api/writing/topics")
     print("      GET    /api/writing/topics/search?q=<keyword>")
     print("      GET    /api/writing/stats")
+    print("\n   Writing Feedback (AI):")                       # ← NEW
+    print("      POST   /api/writing/feedback/grade")         # ← NEW
     print("\n   Writing Feedback (AI):")
     print("      POST   /api/writing/feedback/grade")
+    print("\n   Listening:")
+    print("      GET    /api/listening/exercises")
+    print("      GET    /api/listening/exercises/random")
+    print("      GET    /api/listening/exercises/{id}")
+    print("      GET    /api/listening/stats")
     print("\n   Listening ESL (AI-powered):")
     print("      GET    /api/listen?level=easy|intermediate|difficult")
     print("      GET    /api/listen/{listening_id}")
     print("      POST   /api/listen/{listening_id}/generate-questions")
-    print("      POST   /api/listen/{listening_id}/submit")
-    print("      GET    /api/listen/{listening_id}/record/{user_id}")
-    print("      GET    /api/listen/{listening_id}/history/{user_id}")
     print("      GET    /api/listen/audio-proxy?url=<cdn_url>")
     print("=" * 70 + "\n")
 
@@ -246,5 +225,3 @@ async def shutdown_event():
         await llm_service.close_client()
     except Exception as e:
         print(" Groq client close failed:", e)
-
-    print(" Cleanup complete")

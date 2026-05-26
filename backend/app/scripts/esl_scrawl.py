@@ -616,9 +616,9 @@ def recrawl_missing_script():
     print(f"{'='*50}")
 
 
-# =========================
-# FIX TITLES: update title sai thành đúng
-# =========================
+
+# FIX TITLES
+
 def fix_titles():
     """
     Tìm tất cả document có title sai (= "General Listening Quiz" hoặc rỗng),
